@@ -1,39 +1,79 @@
 package me.kaketuz.hackathon.abilities.spiritual;
 
+import com.projectkorra.projectkorra.GeneralMethods;
 import com.projectkorra.projectkorra.ability.AddonAbility;
 import com.projectkorra.projectkorra.ability.SpiritualAbility;
-import io.github.gonalez.znpcs.ServersNPC;
-import io.github.gonalez.znpcs.npc.NPC;
-import io.github.gonalez.znpcs.npc.NPCType;
-import io.github.gonalez.znpcs.user.ZUser;
+import de.oliver.fancynpcs.api.*;
+import me.kaketuz.hackathon.Hackathon;
 import me.kaketuz.nightmarelib.lib.animation.AnimationBuilder;
-import org.bukkit.Location;
-import org.bukkit.entity.Player;
-import org.bukkit.entity.Vex;
 
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.md_5.bungee.api.ChatColor;
+import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
+import org.bukkit.Location;
+
+import org.bukkit.attribute.Attribute;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
+import org.bukkit.entity.Player;
+import org.bukkit.potion.PotionEffect;
+import org.bukkit.potion.PotionEffectType;
+import org.bukkit.util.Vector;
+
+import java.io.ByteArrayOutputStream;
+import java.io.DataOutputStream;
+import java.io.IOException;
+import java.util.Optional;
 import java.util.UUID;
 
 public class SoulSeparation extends SpiritualAbility implements AddonAbility {
 
-    private NPC playerVisualizer;
-    private int NPC_ID;
-    private Vex sitEntity;
+
+    private NpcData dat;
+    private Npc target;
+
+    private long chargeDuration;
+
+    public enum SeparationStates {
+        CHARGING, FLYING, APPEARANCE, MOVING_TO_BODY
+    }
+
+    private SeparationStates current;
+
+    private boolean canFlyByDefault;
+    private GameMode oldGamemode;
+
 
 
     public SoulSeparation(Player player) {
         super(player);
         if (!bPlayer.canBendIgnoreBinds(this) || hasAbility(player, SoulSeparation.class)) return;
 
-        if (!player.isSneaking()) return;
 
-        NPC_ID = NPC.all().size() + 1;
-        playerVisualizer = ServersNPC.createNPC(NPC_ID, NPCType.PLAYER, player.getLocation(), player.getDisplayName());
+        chargeDuration = Hackathon.config.getLong("Air.Spiritual.SoulSeparation.ChargeDuration");
 
-        try {
-            AnimationBuilder.playAnimation((Player) playerVisualizer.getBukkitEntity(), "\"SoulSeparation_start\"");
-        } catch (IllegalArgumentException e) {
 
-        }
+        dat = new NpcData("#soulseparation(" + getAbilities(SoulSeparation.class).size() + ")", player.getUniqueId(), player.getLocation());
+        dat.setSkin(player.getName());
+        dat.setDisplayName(player.getDisplayName());
+        dat.setShowInTab(false);
+        dat.setCollidable(false);
+        AttributeManager attributeManager = FancyNpcsPlugin.get().getAttributeManager();
+        NpcAttribute attribute = attributeManager.getAttributeByName(dat.getType(), "pose");
+        dat.addAttribute(attribute, "sitting");
+
+        target = FancyNpcsPlugin.get().getNpcAdapter().apply(dat);
+
+        FancyNpcsPlugin.get().getNpcManager().registerNpc(target);
+        target.create();
+        target.spawnForAll();
+
+
+        current = SeparationStates.CHARGING;
+
+
+        canFlyByDefault = player.getAllowFlight();
 
         start();
     }
@@ -41,15 +81,68 @@ public class SoulSeparation extends SpiritualAbility implements AddonAbility {
     @Override
     public void remove() {
         super.remove();
-        if (playerVisualizer != null) {
-            player.teleport(playerVisualizer.getLocation());
-            ServersNPC.deleteNPC(NPC_ID);
+        player.setGameMode(oldGamemode);
+        if (target != null) {
+            player.teleport(target.getData().getLocation());
+            target.removeForAll();
+            FancyNpcsPlugin.get().getNpcManager().removeNpc(target);
         }
     }
 
     @Override
     public void progress() {
+        switch (current) {
+            case CHARGING -> {
+                player.setVelocity(new Vector(0, -2, 0));
+                player.addPotionEffect(new PotionEffect(GeneralMethods.getMCVersion() >= 1205 ? PotionEffectType.SLOWNESS : PotionEffectType.getByName("SLOW"), 20, 255, true, false, false));
+                player.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, 40, 0, true, false, false));
+                player.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, 10, 0, true, false, false));
+                if (System.currentTimeMillis() > getStartTime() + chargeDuration) {
+                    oldGamemode = player.getGameMode();
+                    player.setGameMode(GameMode.SPECTATOR);
+                    player.removePotionEffect(PotionEffectType.BLINDNESS);
+                    current = SeparationStates.FLYING;
+                }
+                if (!player.isSneaking()) remove();
+            }
+            case FLYING -> {
+                if (Hackathon.factory.isGhost(player)) {
+                    Hackathon.factory.setGhost(player, false);
+                }
+            }
+            case APPEARANCE -> {
+                player.setDisplayName(ChatColor.DARK_AQUA + "" + ChatColor.RESET + player.getDisplayName());
+                player.setGlowing(true);
+            }
+            case MOVING_TO_BODY -> {
+                if (player.getGameMode() != GameMode.SPECTATOR) player.setGameMode(GameMode.SPECTATOR);
+                if (player.isGlowing()) player.setGlowing(false);
+                if (player.isFlying()) {
+                    if (!canFlyByDefault) player.setAllowFlight(false);
+                    player.setFlying(false);
+                }
 
+                if (!target.getData().isGlowing()) {
+                    target.getData().setGlowing(true);
+                    target.getData().setGlowingColor(NamedTextColor.DARK_AQUA);
+                }
+
+                player.setVelocity(GeneralMethods.getDirection(player.getLocation(), target.getData().getLocation()).normalize());
+
+                if (player.getLocation().distance(target.getData().getLocation()) < 2) remove();
+            }
+
+        }
+
+    }
+
+
+    public void setCurrent(SeparationStates current) {
+        this.current = current;
+    }
+
+    public SeparationStates getCurrent() {
+        return current;
     }
 
     @Override
@@ -69,7 +162,7 @@ public class SoulSeparation extends SpiritualAbility implements AddonAbility {
 
     @Override
     public String getName() {
-        return "";
+        return "SoulSeparation";
     }
 
     @Override
@@ -89,11 +182,36 @@ public class SoulSeparation extends SpiritualAbility implements AddonAbility {
 
     @Override
     public String getAuthor() {
-        return "";
+        return "lol";
     }
 
     @Override
     public String getVersion() {
-        return "";
+        return "hmm";
     }
+
+    public static void sendEmoteToPlayer(Player receiver, int entityId, String emoteId) {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        DataOutputStream data = new DataOutputStream(out);
+
+        try {
+            data.writeInt(entityId);
+            data.writeUTF(emoteId);
+            data.writeLong(0L);
+            data.writeBoolean(false);
+            data.writeBoolean(false);
+            data.writeBoolean(false);
+            data.writeBoolean(false);
+
+            receiver.sendPluginMessage(
+                    Hackathon.plugin,
+                    "emotecraft:emote",
+                    out.toByteArray()
+            );
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
 }
