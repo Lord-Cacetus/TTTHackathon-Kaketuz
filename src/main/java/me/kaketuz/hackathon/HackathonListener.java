@@ -1,6 +1,7 @@
 package me.kaketuz.hackathon;
 
 import com.projectkorra.projectkorra.BendingPlayer;
+import com.projectkorra.projectkorra.GeneralMethods;
 import com.projectkorra.projectkorra.ability.CoreAbility;
 import me.kaketuz.hackathon.abilities.plant.PlantArmor;
 import me.kaketuz.nightmarelib.lib.vfx.VFX;
@@ -11,6 +12,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerTeleportEvent;
 import org.bukkit.event.player.PlayerToggleSneakEvent;
 
@@ -43,14 +45,14 @@ public class HackathonListener implements Listener {
         if (CoreAbility.hasAbility(player, PlantArmor.class)) {
             PlantArmor armor = CoreAbility.getAbility(player, PlantArmor.class);
             if (armor.isFormed()) {
-                switch (bPlayer.getBoundAbilityName()) {
-                    case "WithdrawalPlants" -> armor.remove();
-                }
+                armor.setInteraction(player.getInventory().getHeldItemSlot());
             }
         }
 
 
     }
+
+
 
 
 

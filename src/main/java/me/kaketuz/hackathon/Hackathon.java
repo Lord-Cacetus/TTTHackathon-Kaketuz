@@ -56,12 +56,24 @@ public final class Hackathon extends JavaPlugin {
 
     private void registerConfig() {
         config.addDefault("Plant.PlantArmor.Collection.CollectRange", 12);
-        config.addDefault("Plant.PlantArmor.Collection.CollectSpeed", 1);
+        config.addDefault("Plant.PlantArmor.Collection.CollectSpeed", 0.4);
+        config.addDefault("Plant.PlantArmor.Collection.CollectInterval", 100);
         config.addDefault("Plant.PlantArmor.General.DurabilityTitle", "<#247A4E> Dᴜʀᴀʙɪʟɪᴛʏ - {current}/{max} </#7CCF36>");
         config.addDefault("Plant.PlantArmor.General.JumpBoost", 3);
         config.addDefault("Plant.PlantArmor.General.SpeedBoost", 3);
         config.addDefault("Plant.PlantArmor.General.DolphinGraceBoost", 2);
         config.addDefault("Plant.PlantArmor.General.MaxDurability", 2000);
+        config.addDefault("Plant.PlantArmor.PlantWhip.Damage", 2);
+        config.addDefault("Plant.PlantArmor.PlantWhip.Knockback", 1.5);
+        config.addDefault("Plant.PlantArmor.PlantWhip.AnglePower", 0.2);
+        config.addDefault("Plant.PlantArmor.PlantWhip.DurabilityTake", 200);
+        config.addDefault("Plant.PlantArmor.PlantWhip.CollisionRadius", 1);
+        config.addDefault("Plant.PlantArmor.PlantWhip.RangeInt", 14);
+        config.addDefault("Plant.PlantArmor.PlantWhip.GrowInterval", 300);
+        config.addDefault("Plant.PlantArmor.PlantWhip.WhipDuration", 6000);
+        config.addDefault("Plant.PlantArmor.PlantWhip.WhipCooldown", 2000);
+
+
         config.options().copyDefaults(true);
         saveConfig();
 
