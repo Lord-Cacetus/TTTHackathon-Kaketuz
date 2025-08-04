@@ -75,4 +75,12 @@ public class VerletPoint {
     public boolean isLocked() {
         return locked;
     }
+
+    public void setPrevious(Vector prev) {
+        this.previous = prev.clone();
+    }
+
+    public Vector getPrevious() {
+        return previous;
+    }
 }

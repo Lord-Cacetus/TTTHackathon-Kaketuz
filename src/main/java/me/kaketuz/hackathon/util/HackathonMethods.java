@@ -48,4 +48,10 @@ public class HackathonMethods {
         }
         return false;
     }
+    public static double round(double value, int decimalPlaces) {
+        if (decimalPlaces < 0) throw new IllegalArgumentException("decimalPlaces < 0");
+
+        double scale = Math.pow(10, decimalPlaces);
+        return Math.round(value * scale) / scale;
+    }
 }

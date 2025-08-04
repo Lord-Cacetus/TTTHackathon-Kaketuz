@@ -3,4 +3,6 @@ version: '1.0.0'
 main: me.kaketuz.hackathon.Hackathon
 api-version: '1.20'
 authors: [ KaketuZ ]
-description: Duels Plugin :/
+description: Hackathon plugin wow
+depend:
+  - ProjectKorra

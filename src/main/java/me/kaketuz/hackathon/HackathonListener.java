@@ -4,6 +4,7 @@ import com.projectkorra.projectkorra.BendingPlayer;
 import com.projectkorra.projectkorra.GeneralMethods;
 import com.projectkorra.projectkorra.ability.CoreAbility;
 import com.projectkorra.projectkorra.event.BendingReloadEvent;
+import com.projectkorra.projectkorra.event.PlayerCooldownChangeEvent;
 import me.kaketuz.hackathon.abilities.plant.PlantArmor;
 import me.kaketuz.nightmarelib.lib.vfx.VFX;
 import org.bukkit.GameMode;
@@ -102,6 +103,23 @@ public class HackathonListener implements Listener {
             if (plant.isFormed()) {
                 event.setCancelled(true);
                 plant.invokeLandTask(event.getDamage());
+            }
+        }
+    }
+
+    @EventHandler
+    public void onCooldownAdd(PlayerCooldownChangeEvent event) {
+        if (!event.getPlayer().isOnline()) return;
+        if (event.getResult() == PlayerCooldownChangeEvent.Result.ADDED) {
+            if (CoreAbility.hasAbility(event.getPlayer().getPlayer(), PlantArmor.class)) {
+                PlantArmor plant = CoreAbility.getAbility(event.getPlayer().getPlayer(), PlantArmor.class);
+
+                if (plant.isFormed()) {
+                    plant.getMultiAbilities().stream()
+                            .filter(m -> m.getName().equalsIgnoreCase(event.getAbility()))
+                            .findFirst()
+                            .ifPresent(m -> plant.addToCooldownList(event.getCooldown(), event.getAbility()));
+                }
             }
         }
     }

@@ -38,9 +38,10 @@ public final class Hackathon extends JavaPlugin {
         hasOraxen = getServer().getPluginManager().getPlugin("Oraxen") != null;
 
 
-        Bukkit.getScheduler().runTaskLater(this, () -> CoreAbility.registerPluginAbilities(this, "me.kaketuz.hackathon.abilities"), 1);
+       CoreAbility.registerPluginAbilities(this, "me.kaketuz.hackathon.abilities");
 
         getServer().getPluginManager().registerEvents(new HackathonListener(), this);
+
 
         registerConfig();
     }
@@ -59,11 +60,13 @@ public final class Hackathon extends JavaPlugin {
         config.addDefault("Plant.PlantArmor.Collection.CollectSpeed", 0.4);
         config.addDefault("Plant.PlantArmor.Collection.CollectInterval", 100);
 
-        config.addDefault("Plant.PlantArmor.General.DurabilityTitle", "<#247A4E> Dᴜʀᴀʙɪʟɪᴛʏ - {current}/{max} </#7CCF36>");
+        config.addDefault("Plant.PlantArmor.General.DurabilityTitle", "Dᴜʀᴀʙɪʟɪᴛʏ - {current}/{max}");
         config.addDefault("Plant.PlantArmor.General.JumpBoost", 3);
         config.addDefault("Plant.PlantArmor.General.SpeedBoost", 3);
         config.addDefault("Plant.PlantArmor.General.DolphinGraceBoost", 2);
         config.addDefault("Plant.PlantArmor.General.MaxDurability", 2000);
+        config.addDefault("Plant.PlantArmor.General.CooldownMessage", "<! Cooldown !>");
+        config.addDefault("Plant.PlantArmor.General.NotEnoughDurabilityMessage", "<! Not enough durability !>");
 
         config.addDefault("Plant.PlantArmor.PlantWhip.Damage", 2);
         config.addDefault("Plant.PlantArmor.PlantWhip.Knockback", 1.5);
@@ -82,6 +85,13 @@ public final class Hackathon extends JavaPlugin {
         config.addDefault("Plant.PlantArmor.VineGrabble.DurabilityTakeCount", 300);
         config.addDefault("Plant.PlantArmor.VineGrabble.Cooldown", 6000);
         config.addDefault("Plant.PlantArmor.VineGrabble.DurationIfMissed", 3000);
+
+        config.addDefault("Plant.PlantArmor.Leap.PowerUpFactor", 0.5);
+        config.addDefault("Plant.PlantArmor.Leap.MinimalPower", 1);
+        config.addDefault("Plant.PlantArmor.Leap.MaxStages", 5);
+        config.addDefault("Plant.PlantArmor.Leap.Cooldown", 7000);
+        config.addDefault("Plant.PlantArmor.Leap.LevelUpInterval", 1000);
+        config.addDefault("Plant.PlantArmor.Leap.DurabilityTakeCount", 200);
 
         config.addDefault("Plant.PlantArmor.RegeneratingAssembly.Cooldown", 10000);
 

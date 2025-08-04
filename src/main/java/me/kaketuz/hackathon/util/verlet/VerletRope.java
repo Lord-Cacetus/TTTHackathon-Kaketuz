@@ -1,12 +1,18 @@
 package me.kaketuz.hackathon.util.verlet;
 
 import com.projectkorra.projectkorra.GeneralMethods;
+import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
 import org.bukkit.World;
+import org.bukkit.block.Block;
+import org.bukkit.block.BlockFace;
+import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 
 public class VerletRope {
     private List<VerletPoint> points = new ArrayList<>();
@@ -38,17 +44,59 @@ public class VerletRope {
     public void addSegment() {
         if (points.size() < 2) return;
 
-        VerletPoint last = points.getLast();
+        VerletPoint last       = points.getLast();
         VerletPoint secondLast = points.get(points.size() - 2);
+        Vector forwardDir      = last.getPosition()
+                .clone()
+                .subtract(secondLast.getPosition())
+                .normalize();
 
-        Vector dir = last.getPosition().clone().subtract(secondLast.getPosition()).normalize();
-        Vector newPos = last.getPosition().clone().add(dir.multiply(1));
+        Location lastLoc = new Location(world,
+                last.getPosition().getX(),
+                last.getPosition().getY(),
+                last.getPosition().getZ());
 
-        VerletPoint newPoint = new VerletPoint(new Location(world, newPos.getX(), newPos.getY(), newPos.getZ()), false);
-        points.add(newPoint);
+        double radius = segmentLen * 1.5;
+        int steps = 8;
 
-        sticks.add(new VerletStick(last, newPoint, 1));
+        class Candidate {
+            Location loc;
+            double score;
+            Candidate(Location loc, double score) {
+                this.loc = loc; this.score = score;
+            }
+        }
+
+        List<Candidate> candidates = new ArrayList<>();
+        for (int xi = -steps; xi <= steps; xi++) {
+            for (int yi = -steps; yi <= steps; yi++) {
+                for (int zi = -steps; zi <= steps; zi++) {
+                    double dx = xi * radius / steps;
+                    double dy = yi * radius / steps;
+                    double dz = zi * radius / steps;
+                    Vector offset = new Vector(dx, dy, dz);
+                    if (offset.lengthSquared() > radius * radius) continue;
+
+                    Location candLoc = lastLoc.clone().add(offset);
+                    if (GeneralMethods.isSolid(candLoc.getBlock())) continue;
+
+                    Vector toCand = offset.clone().normalize();
+                    double score = forwardDir.dot(toCand);
+                    candidates.add(new Candidate(candLoc, score));
+                }
+            }
+        }
+
+        candidates.sort((a, b) -> Double.compare(b.score, a.score));
+
+        if (!candidates.isEmpty()) {
+            Location chosen = candidates.getFirst().loc;
+            VerletPoint newPoint = new VerletPoint(chosen, false);
+            points.add(newPoint);
+            sticks.add(new VerletStick(last, newPoint, segmentLen));
+        }
     }
+
 
     public void removeSegment() {
         if (points.size() <= 2) return;
@@ -81,46 +129,73 @@ public class VerletRope {
         }
     }
 
+    private final Map<VerletPoint, Integer> stuckCounters = new IdentityHashMap<>();
+    private static final int STUCK_THRESHOLD = 4;
+    private static final double EPS_NORMAL = 1e-3;
+    private static final double EPS_EMERGENCY = 0.1;
+
     private void handleCollision() {
+        if (!collision) return;
+
         for (VerletPoint p : points) {
-            if (!p.isCollisionEnabled()) continue;
-            Vector pos = p.getPosition();
-            Location loc = new Location(world, pos.getX(), pos.getY(), pos.getZ());
-            if (GeneralMethods.isSolid(loc.getBlock())) {
-                loc.setY(loc.getBlockY() + 1);
-                p.getPosition().setX(loc.getX());
-                p.getPosition().setY(loc.getY());
-                p.getPosition().setZ(loc.getZ());
-                p.dampenVelocity(0.3);
+            if (!p.isCollisionEnabled() || p.isLocked()) continue;
+
+            Vector pos     = p.getPosition();
+            Vector prevPos = p.getPrevious();
+            Vector motion  = pos.clone().subtract(prevPos);
+            double dist    = motion.length();
+            if (dist == 0 || !isFinite(pos)) {
+                continue;
+            }
+            motion.normalize();
+
+            RayTraceResult result = world.rayTraceBlocks(
+                    toLoc(prevPos), motion, dist, FluidCollisionMode.NEVER, true
+            );
+            if (result == null || result.getHitBlock() == null) {
+                stuckCounters.remove(p);
+                continue;
+            }
+
+            Vector hitPos = result.getHitPosition();
+            BlockFace face = result.getHitBlockFace();
+
+            int stuck = stuckCounters.getOrDefault(p, 0) + 1;
+            boolean emergency = stuck >= STUCK_THRESHOLD;
+
+            double eps = emergency ? EPS_EMERGENCY : EPS_NORMAL;
+            Vector correction = face.getDirection().multiply(-1).multiply(eps);
+            Vector corrected = hitPos.clone().add(correction);
+
+            p.setPosition(corrected);
+            p.setPrevious(corrected);
+
+            p.dampenVelocity(0.25);
+
+            if (emergency) {
+                stuckCounters.remove(p);
+            } else {
+                stuckCounters.put(p, stuck);
             }
         }
     }
 
-
-
-
-
-
-
-
-
-    private double getComponent(Vector vector, int index) {
-        return switch (index) {
-            case 0 -> vector.getX();
-            case 1 -> vector.getY();
-            case 2 -> vector.getZ();
-            default -> throw new IllegalArgumentException("Invalid index: " + index);
-        };
+    public List<VerletPoint> getPoints() {
+        return points;
     }
 
-    private void setComponent(Vector vector, int index, double value) {
-        switch (index) {
-            case 0 -> vector.setX(value);
-            case 1 -> vector.setY(value);
-            case 2 -> vector.setZ(value);
-            default -> throw new IllegalArgumentException("Invalid index: " + index);
-        }
+    private boolean isFinite(Vector v) {
+        return Double.isFinite(v.getX())
+                && Double.isFinite(v.getY())
+                && Double.isFinite(v.getZ());
     }
+
+    private Location toLoc(Vector v) {
+        return new Location(world, v.getX(), v.getY(), v.getZ());
+    }
+
+
+
 
 
 
@@ -161,9 +236,8 @@ public class VerletRope {
 
     public void setStartPosition(Location loc) {
         if (!points.isEmpty()) {
-            VerletPoint start = points.get(0);
+            VerletPoint start = points.getFirst();
             start.setPosition(loc.toVector());
-            start.lock(true);
         }
     }
 
