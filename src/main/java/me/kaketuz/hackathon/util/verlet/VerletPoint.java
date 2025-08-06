@@ -1,4 +1,5 @@
 package me.kaketuz.hackathon.util.verlet;
+
 import org.bukkit.Location;
 import org.bukkit.util.Vector;
 
@@ -76,11 +77,11 @@ public class VerletPoint {
         return locked;
     }
 
-    public void setPrevious(Vector prev) {
-        this.previous = prev.clone();
-    }
-
     public Vector getPrevious() {
         return previous;
+    }
+
+    public void setPrevious(Vector previous) {
+        this.previous = previous;
     }
 }

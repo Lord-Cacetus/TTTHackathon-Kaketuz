@@ -26,7 +26,7 @@ public class VerletRope {
     public VerletRope(Location start, Location end, int segments, double segmentLen) {
         this.world = start.getWorld();
         Vector dir = end.toVector().subtract(start.toVector());
-       this.segmentLen = segmentLen;
+        this.segmentLen = segmentLen;
         dir.normalize().multiply(segmentLen);
         for (int i = 0; i <= segments; i++) {
             Location loc = start.clone().add(dir.clone().multiply(i));
@@ -97,6 +97,9 @@ public class VerletRope {
         }
     }
 
+    public List<VerletPoint> getPoints() {
+        return points;
+    }
 
     public void removeSegment() {
         if (points.size() <= 2) return;
@@ -129,70 +132,47 @@ public class VerletRope {
         }
     }
 
-    private final Map<VerletPoint, Integer> stuckCounters = new IdentityHashMap<>();
-    private static final int STUCK_THRESHOLD = 4;
-    private static final double EPS_NORMAL = 1e-3;
-    private static final double EPS_EMERGENCY = 0.1;
 
     private void handleCollision() {
         if (!collision) return;
 
+        final double EPS = 0.01;
         for (VerletPoint p : points) {
             if (!p.isCollisionEnabled() || p.isLocked()) continue;
 
-            Vector pos     = p.getPosition();
-            Vector prevPos = p.getPrevious();
-            Vector motion  = pos.clone().subtract(prevPos);
-            double dist    = motion.length();
-            if (dist == 0 || !isFinite(pos)) {
-                continue;
-            }
-            motion.normalize();
+            Vector curr = p.getPosition();
+            Vector prev = p.getPrevious();
+            Vector motion = curr.clone().subtract(prev);
+            double dist = motion.length();
+            if (dist == 0) continue;
+            Vector dir = motion.clone().normalize();
 
             RayTraceResult result = world.rayTraceBlocks(
-                    toLoc(prevPos), motion, dist, FluidCollisionMode.NEVER, true
+                    toLoc(prev),
+                    dir,
+                    dist,
+                    FluidCollisionMode.NEVER,
+                    true
             );
-            if (result == null || result.getHitBlock() == null) {
-                stuckCounters.remove(p);
-                continue;
-            }
+            if (result == null || result.getHitBlock() == null) continue;
 
-            Vector hitPos = result.getHitPosition();
             BlockFace face = result.getHitBlockFace();
+            Vector hit = result.getHitPosition();
 
-            int stuck = stuckCounters.getOrDefault(p, 0) + 1;
-            boolean emergency = stuck >= STUCK_THRESHOLD;
-
-            double eps = emergency ? EPS_EMERGENCY : EPS_NORMAL;
-            Vector correction = face.getDirection().multiply(-1).multiply(eps);
-            Vector corrected = hitPos.clone().add(correction);
+            Vector offset = face.getDirection().multiply(EPS);
+            Vector corrected = hit.clone().add(offset);
 
             p.setPosition(corrected);
             p.setPrevious(corrected);
-
-            p.dampenVelocity(0.25);
-
-            if (emergency) {
-                stuckCounters.remove(p);
-            } else {
-                stuckCounters.put(p, stuck);
-            }
+            p.dampenVelocity(0.3);
         }
-    }
-
-    public List<VerletPoint> getPoints() {
-        return points;
-    }
-
-    private boolean isFinite(Vector v) {
-        return Double.isFinite(v.getX())
-                && Double.isFinite(v.getY())
-                && Double.isFinite(v.getZ());
     }
 
     private Location toLoc(Vector v) {
         return new Location(world, v.getX(), v.getY(), v.getZ());
     }
+
+
 
 
 

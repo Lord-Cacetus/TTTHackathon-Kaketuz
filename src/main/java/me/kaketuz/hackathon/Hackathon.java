@@ -78,13 +78,13 @@ public final class Hackathon extends JavaPlugin {
         config.addDefault("Plant.PlantArmor.PlantWhip.WhipDuration", 6000);
         config.addDefault("Plant.PlantArmor.PlantWhip.WhipCooldown", 2000);
 
-        config.addDefault("Plant.PlantArmor.VineGrabble.PullSpeed", 0.7);
-        config.addDefault("Plant.PlantArmor.VineGrabble.AnglePower", 0.04);
-        config.addDefault("Plant.PlantArmor.VineGrabble.RangeInt", 60);
-        config.addDefault("Plant.PlantArmor.VineGrabble.GrowInterval", 100);
-        config.addDefault("Plant.PlantArmor.VineGrabble.DurabilityTakeCount", 300);
-        config.addDefault("Plant.PlantArmor.VineGrabble.Cooldown", 6000);
-        config.addDefault("Plant.PlantArmor.VineGrabble.DurationIfMissed", 3000);
+        config.addDefault("Plant.PlantArmor.VineGrapple.PullSpeed", 0.7);
+        config.addDefault("Plant.PlantArmor.VineGrapple.AnglePower", 0.2);
+        config.addDefault("Plant.PlantArmor.VineGrapple.RangeInt", 100);
+        config.addDefault("Plant.PlantArmor.VineGrapple.GrowInterval", 35);
+        config.addDefault("Plant.PlantArmor.VineGrapple.DurabilityTakeCount", 300);
+        config.addDefault("Plant.PlantArmor.VineGrapple.Cooldown", 2000);
+        config.addDefault("Plant.PlantArmor.VineGrapple.DurationIfMissed", 3000);
 
         config.addDefault("Plant.PlantArmor.Leap.PowerUpFactor", 0.5);
         config.addDefault("Plant.PlantArmor.Leap.MinimalPower", 1);

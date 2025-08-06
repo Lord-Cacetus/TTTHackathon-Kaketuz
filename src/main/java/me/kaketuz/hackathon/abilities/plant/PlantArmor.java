@@ -39,6 +39,7 @@ import org.bukkit.inventory.meta.LeatherArmorMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
+import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Transformation;
@@ -125,9 +126,9 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
     private double whipDamage, whipKnockback, whipAnglePower, whipCollisionRadius;
 
     //VineGrabble
-    private int grabbleRange, grabbleGrowInterval, grabbleDurabilityTakeCount;
-    private long grabbleCooldown, grabbleDurationIfMissed;
-    private double grabbleAnglePower, grabblePullSpeed;
+    private int grappleRange, grappleGrowInterval, grappleDurabilityTakeCount;
+    private long grappleCooldown, grappleDurationIfMissed;
+    private double grappleAnglePower, grapplePullSpeed;
 
     //Leap
     private int leapMaxStages, leapDurabilityTakeCount;
@@ -166,13 +167,13 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         whipDuration = Hackathon.config.getLong("Plant.PlantArmor.PlantWhip.WhipDuration");
         whipCooldown = Hackathon.config.getLong("Plant.PlantArmor.PlantWhip.WhipCooldown");
 
-        grabblePullSpeed = Hackathon.config.getDouble("Plant.PlantArmor.VineGrabble.PullSpeed");
-        grabbleAnglePower = Hackathon.config.getDouble("Plant.PlantArmor.VineGrabble.AnglePower");
-        grabbleRange = Hackathon.config.getInt("Plant.PlantArmor.VineGrabble.RangeInt");
-        grabbleGrowInterval = Hackathon.config.getInt("Plant.PlantArmor.VineGrabble.GrowInterval");
-        grabbleDurabilityTakeCount = Hackathon.config.getInt("Plant.PlantArmor.VineGrabble.DurabilityTakeCount");
-        grabbleCooldown = Hackathon.config.getLong("Plant.PlantArmor.VineGrabble.Cooldown");
-        grabbleDurationIfMissed = Hackathon.config.getLong("Plant.PlantArmor.VineGrabble.DurationIfMissed");
+        grapplePullSpeed = Hackathon.config.getDouble("Plant.PlantArmor.VineGrapple.PullSpeed");
+        grappleAnglePower = Hackathon.config.getDouble("Plant.PlantArmor.VineGrapple.AnglePower");
+        grappleRange = Hackathon.config.getInt("Plant.PlantArmor.VineGrapple.RangeInt");
+        grappleGrowInterval = Hackathon.config.getInt("Plant.PlantArmor.VineGrapple.GrowInterval");
+        grappleDurabilityTakeCount = Hackathon.config.getInt("Plant.PlantArmor.VineGrapple.DurabilityTakeCount");
+        grappleCooldown = Hackathon.config.getLong("Plant.PlantArmor.VineGrapple.Cooldown");
+        grappleDurationIfMissed = Hackathon.config.getLong("Plant.PlantArmor.VineGrapple.DurationIfMissed");
 
         leapPowerPerPower = Hackathon.config.getDouble("Plant.PlantArmor.Leap.PowerUpFactor");
         leapMinPower = Hackathon.config.getDouble("Plant.PlantArmor.Leap.MinimalPower");
@@ -418,8 +419,8 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         return new ArrayList<>(Arrays.asList(
                 new MultiAbilityManager.MultiAbilityInfoSub("VineWhip", Element.PLANT),
                 new MultiAbilityManager.MultiAbilityInfoSub("TralaleloTralala", Element.PLANT),
-                new MultiAbilityManager.MultiAbilityInfoSub("BombardiroCorocodilo", Element.PLANT),
-                new MultiAbilityManager.MultiAbilityInfoSub("VineGrabble", Element.PLANT),
+                new MultiAbilityManager.MultiAbilityInfoSub("TenaciousVines", Element.PLANT),
+                new MultiAbilityManager.MultiAbilityInfoSub("VineGrapple", Element.PLANT),
                 new MultiAbilityManager.MultiAbilityInfoSub("Leap", Element.PLANT),
                 new MultiAbilityManager.MultiAbilityInfoSub("BallerinaCappuchina", Element.PLANT),
                 new MultiAbilityManager.MultiAbilityInfoSub("LiriliLarila", Element.PLANT),
@@ -461,7 +462,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                if (type == InteractionType.LEFT_CLICK) new VineWhipTask();
             }
             case 3 -> {
-                if (type == InteractionType.LEFT_CLICK) new VineGrabbleTask();
+                if (type == InteractionType.LEFT_CLICK) new VineGrappleTask();
             }
             case 4 -> {
                 if (type == InteractionType.LEFT_CLICK || type == InteractionType.SNEAK_DOWN) new LeapTask(type);
@@ -573,7 +574,6 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             bPlayer.addCooldown("VineWhip", whipCooldown);
 
             vine.getRope().setStartPosition(GeneralMethods.getRightSide(player.getLocation().add(0, 1, 0), 0.4));
-            vine.update();
             vine.getRope().applyVelocity(player.getLocation().getDirection().multiply(whipAnglePower));
 
             if (vine.getRope().getRenderPoints().size() < whipRange) {
@@ -609,7 +609,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         @Override
         public void remove() {
             TASKS.remove(this);
-            vine.remove();
+            vine.cancel();
         }
     }
 
@@ -618,7 +618,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
     }
 
 
-    private class VineGrabbleTask implements LocalTask {
+    private class VineGrappleTask implements LocalTask {
 
         private int i;
         private boolean hit, flag;
@@ -627,22 +627,25 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         private Vine vine;
         private long start;
 
-        public VineGrabbleTask() {
-            if (bPlayer.isOnCooldown("VineGrabble")) {
+        public VineGrappleTask() {
+            if (bPlayer.isOnCooldown("VineGrapple")) {
                 ActionBar.sendActionBar(ChatColor.RED + cooldownMessage, player);
                 return;
             }
-            if (currentDurability - grabbleDurabilityTakeCount <= 0) {
+            if (currentDurability - grappleDurabilityTakeCount <= 0) {
                 ActionBar.sendActionBar(ChatColor.RED + notEnoughDurabilityMessage, player);
                 return;
             }
             TASKS.stream()
-                    .filter(t -> t.getClass() == VineGrabbleTask.class)
+                    .filter(t -> t.getClass() == VineGrappleTask.class)
                     .findAny()
-                    .ifPresent(LocalTask::remove);
+                    .ifPresent(t -> {
+                        t.remove();
+                        player.setVelocity(player.getLocation().getDirection().multiply(2));
+                    });
             vine = new Vine(GeneralMethods.getRightSide(player.getLocation().add(0, 1, 0), 0.4), GeneralMethods.getTargetedLocation(player, 3), 2);
-            i = grabbleGrowInterval;
-            currentDurability -= grabbleDurabilityTakeCount;
+            i = grappleGrowInterval;
+            currentDurability -= grappleDurabilityTakeCount;
             vine.getRope().getPoints().getLast().setCollisionEnabled(false);
             start = System.currentTimeMillis();
             TASKS.add(this);
@@ -650,19 +653,18 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
         @Override
         public void update() {
-
-            vine.update();
             if (!hit) {
-                bPlayer.addCooldown("VineGrabble", grabbleCooldown);
-                if (vine.getRope().getRenderPoints().size() < grabbleRange && System.currentTimeMillis() > start + i) {
+                bPlayer.addCooldown("VineGrapple", grappleCooldown);
+                if (vine.getRope().getRenderPoints().size() < grappleRange && System.currentTimeMillis() > start + i) {
                     vine.getRope().addSegment();
-                    i += grabbleGrowInterval;
+                    i += grappleGrowInterval;
                 } else if (!flag) {
                     endGrowTiming = System.currentTimeMillis();
                     flag = true;
                 }
 
-                if (System.currentTimeMillis() > endGrowTiming + grabbleDurationIfMissed && endGrowTiming != 0) {
+
+                if (System.currentTimeMillis() > endGrowTiming + grappleDurationIfMissed && endGrowTiming != 0) {
                     remove();
                     return;
                 }
@@ -671,7 +673,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
                 RayTraceResult result = vine.getRope().getRenderPoints().getLast().getWorld().rayTraceBlocks(
                         vine.getRope().getRenderPoints().getLast(),
-                        vine.getRope().getRenderPoints().getLast().getDirection(), 0.2, FluidCollisionMode.NEVER, true);
+                        player.getLocation().getDirection(), 1, FluidCollisionMode.NEVER, true);
 
                 Optional.ofNullable(result)
                         .map(RayTraceResult::getHitBlock)
@@ -680,13 +682,13 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                         .ifPresent(b -> {
                             hit = true;
                             hitBlock = b;
-                            vine.getRope().lockPoint(vine.getRope().getPoints().size() - 1, true);
+                            vine.getRope().lockPoint(vine.getRope().getRenderPoints().size() - 1, true);
                             vine.getRope().lockPoint(0, false);
                             vine.getRope().setEndPosition(b.getLocation());
                             vine.getRope().setGravity(new Vector(0, -9.8, 0));
                         });
 
-                vine.getRope().applyVelocity(player.getLocation().getDirection().multiply(grabbleAnglePower));
+                vine.getRope().applyVelocity(player.getLocation().getDirection().multiply(grappleAnglePower));
             } else {
                 if (player.isSneaking() && player.getInventory().getHeldItemSlot() == 3) {
                     if (vine.getRope().getRenderPoints().getFirst().distance(player.getLocation()) <= 0.5) {
@@ -694,7 +696,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                         vine.getDisplays().getFirst().remove();
                         if (vine.getRope().getRenderPoints().size() <= 2) remove();
                     }
-                    player.setVelocity(GeneralMethods.getDirection(player.getLocation(), vine.getRope().getRenderPoints().getFirst()).normalize().multiply(grabblePullSpeed));
+                    player.setVelocity(GeneralMethods.getDirection(player.getLocation(), vine.getRope().getRenderPoints().getFirst()).normalize().multiply(player.getLocation().distance(vine.getRope().getRenderPoints().getFirst()) > 5 ? grapplePullSpeed + player.getLocation().distance(vine.getRope().getRenderPoints().getFirst()) / 2 : grapplePullSpeed));
                 } else if (player.isSneaking()) {
                     remove();
                 } else {
@@ -707,17 +709,16 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         @Override
         public void remove() {
             TASKS.remove(this);
-            vine.remove();
+            vine.cancel();
         }
     }
 
-    public static class Vine {
+    public static class Vine extends BukkitRunnable {
         private VerletRope rope;
         private List<BlockDisplay> displays = new ArrayList<>();
         private long start;
         private BlockData currentSkin;
-        private Location startLoc, end;
-        private boolean isRemoved;
+        private Location startLoc, end;;
 
         public Vine(Location start, Location end, int segments) {
             startLoc = start;
@@ -731,30 +732,63 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             this.currentSkin = VINE_SKINS.containsKey(biome)
                     ? VINE_SKINS.get(biome)[ThreadLocalRandom.current().nextInt(VINE_SKINS.get(biome).length)]
                     : Material.BIG_DRIPLEAF_STEM.createBlockData();
+            runTaskTimer(Hackathon.plugin, 1L, 0);
         }
 
-        public void update() {
-            if (isRemoved) return;
-            if (rope.getRenderPoints().size() != displays.size()) {
-                for (int j = displays.size(); j < rope.getRenderPoints().size(); j++) {
-                    Location loc = rope.getRenderPoints().get(j);
-                    float pitch = loc.getPitch();
-                    pitch = (pitch >= 0) ? pitch - 90 : pitch + 90;
-                    loc.setPitch(pitch);
 
-                    BlockDisplay display = (BlockDisplay) startLoc.getWorld().spawnEntity(loc, EntityType.BLOCK_DISPLAY);
-                    display.setPersistent(false);
+        @Override
+        public synchronized void cancel() throws IllegalStateException {
+            super.cancel();
+            displays.forEach(BlockDisplay::remove);
+        }
+
+        public VerletRope getRope() {
+            return rope;
+        }
+
+        public BlockData getCurrentSkin() {
+            return currentSkin;
+        }
+
+        public List<BlockDisplay> getDisplays() {
+            return displays;
+        }
+
+        public long getStart() {
+            return start;
+        }
+
+        public Location getStartLoc() {
+            return startLoc;
+        }
+
+        public Location getEnd() {
+            return end;
+        }
+
+        @Override
+        public void run() {
+            rope.setConstraintIterations(10);
+            rope.simulate(0.016);
+            if (rope.getRenderPoints().size() > displays.size()) {
+                for (int i = displays.size(); i < rope.getRenderPoints().size(); i++) {
+                    BlockDisplay display = (BlockDisplay) rope.getRenderPoints().get(i).getWorld().spawnEntity(rope.getRenderPoints().get(i), EntityType.BLOCK_DISPLAY);
                     display.setBlock(currentSkin);
+                    display.setPersistent(false);
+                    Transformation t = display.getTransformation();
+                    t.getTranslation().set(new Vector3f(-0.5f, -0.5f, -0.5f));
+                    display.setTransformation(t);
                     displays.add(display);
                 }
             }
-
             List<Location> points = rope.getRenderPoints();
             for (int i = 0; i < points.size(); i++) {
-                Location target = points.get(i).clone();
-                Vector direction;
+                Location loc = points.get(i).clone();
 
+
+                Vector direction;
                 if (i > 0 && i < points.size() - 1) {
+
                     Vector before = GeneralMethods.getDirection(points.get(i - 1), points.get(i));
                     Vector after = GeneralMethods.getDirection(points.get(i), points.get(i + 1));
                     direction = before.add(after).normalize();
@@ -764,11 +798,17 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                     direction = GeneralMethods.getDirection(points.get(i - 1), points.get(i));
                 }
 
-                target.setDirection(direction);
-                float pitch = target.getPitch();
+                loc.setDirection(direction);
+
+                float pitch = loc.getPitch();
                 pitch = (pitch >= 0) ? pitch - 90 : pitch + 90;
-                target.setPitch(pitch);
-                displays.get(i).teleport(target);
+                loc.setPitch(pitch);
+
+
+                if (i < displays.size()) {
+                    displays.get(i).setTeleportDuration(2);
+                    displays.get(i).teleport(loc);
+                }
 
                 BlockDisplay display = displays.get(i);
                 BlockData dat = display.getBlock();
@@ -798,39 +838,6 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                 else if (datlast.getMaterial() == Material.TWISTING_VINES_PLANT)
                     last.setBlock(Material.TWISTING_VINES.createBlockData(d -> ((Ageable) d).setAge(25)));
             }
-
-            rope.simulate(0.016);
-            rope.setConstraintIterations(20);
-
-        }
-
-        public void remove() {
-            displays.forEach(BlockDisplay::remove);
-            isRemoved = true;
-        }
-
-        public VerletRope getRope() {
-            return rope;
-        }
-
-        public BlockData getCurrentSkin() {
-            return currentSkin;
-        }
-
-        public List<BlockDisplay> getDisplays() {
-            return displays;
-        }
-
-        public long getStart() {
-            return start;
-        }
-
-        public Location getStartLoc() {
-            return startLoc;
-        }
-
-        public Location getEnd() {
-            return end;
         }
     }
 
@@ -996,7 +1003,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         public void update() {
             if (type == InteractionType.LEFT_CLICK && System.currentTimeMillis() > start + 100) if (player.isOnGround()) remove();
             if (type == InteractionType.SNEAK_DOWN) {
-                if (player.isSneaking()) {
+                if (player.isSneaking() && !flag) {
                     player.sendTitle("", buildTitleText(), 0, 10, 0);
                     if (currStage <= leapMaxStages) {
                         if (System.currentTimeMillis() > start + leapI) {
@@ -1032,8 +1039,6 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                 Location rightLoc = GeneralMethods.getRightSide(player.getLocation().add(0, 1, 0), 0.4);
                 left.getRope().setStartPosition(leftLoc);
                 right.getRope().setStartPosition(rightLoc);
-                left.update();
-                right.update();
             }
         }
 
@@ -1048,8 +1053,8 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
         @Override
         public void remove() {
-            left.remove();
-            right.remove();
+            left.cancel();
+            right.cancel();
             TASKS.remove(this);
         }
     }
