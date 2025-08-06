@@ -20,6 +20,14 @@ public class VerletStick {
         return b;
     }
 
+    public double getCurrentLength() {
+        return b.getPosition().distance(a.getPosition());
+    }
+
+    public void setRestLength(double restLength) {
+        this.restLength = restLength;
+    }
+
     public void constrain() {
         Vector delta = b.getPosition().clone().subtract(a.getPosition());
         double current = delta.length();

@@ -1,6 +1,7 @@
 package me.kaketuz.hackathon.util.verlet;
 
 import org.bukkit.Location;
+import org.bukkit.World;
 import org.bukkit.util.Vector;
 
 public class VerletPoint {
@@ -9,11 +10,13 @@ public class VerletPoint {
     private boolean locked;
     private boolean gravityEnabled;
     private boolean collisionEnabled;
+    private World world;
 
     public VerletPoint(Location loc, boolean locked) {
         this.position = loc.toVector();
         this.previous = loc.toVector();
         this.locked = locked;
+        this.world = loc.getWorld();
         this.gravityEnabled = true;
         this.collisionEnabled = true;
     }
@@ -83,5 +86,9 @@ public class VerletPoint {
 
     public void setPrevious(Vector previous) {
         this.previous = previous;
+    }
+
+    public Location getPositionLoc() {
+        return position.toLocation(world);
     }
 }

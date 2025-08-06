@@ -1,5 +1,7 @@
 package me.kaketuz.hackathon;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -78,6 +80,13 @@ public final class Hackathon extends JavaPlugin {
         config.addDefault("Plant.PlantArmor.PlantWhip.WhipDuration", 6000);
         config.addDefault("Plant.PlantArmor.PlantWhip.WhipCooldown", 2000);
 
+        config.addDefault("Plant.PlantArmor.TenaciousVine.Cooldown", 6000);
+        config.addDefault("Plant.PlantArmor.TenaciousVine.ThrowPower", 2.5);
+        config.addDefault("Plant.PlantArmor.TenaciousVine.VineSizeInt", 6);
+        config.addDefault("Plant.PlantArmor.TenaciousVine.StunDuration", 2000);
+        config.addDefault("Plant.PlantArmor.TenaciousVine.DurabilityTakeCount", 200);
+        config.addDefault("Plant.PlantArmor.TenaciousVine.Message", "* Entangled in Vines *");
+
         config.addDefault("Plant.PlantArmor.VineGrapple.PullSpeed", 0.7);
         config.addDefault("Plant.PlantArmor.VineGrapple.AnglePower", 0.2);
         config.addDefault("Plant.PlantArmor.VineGrapple.RangeInt", 100);
@@ -95,6 +104,17 @@ public final class Hackathon extends JavaPlugin {
 
         config.addDefault("Plant.PlantArmor.RegeneratingAssembly.Cooldown", 10000);
 
+        config.addDefault("Plant.Combos.VineWalk.FlySpeed", 0.1);
+        config.addDefault("Plant.Combos.VineWalk.SourceRange", 15);
+        config.addDefault("Plant.Combos.VineWalk.ReachSpeed", 0.5);
+        config.addDefault("Plant.Combos.VineWalk.Duration", 10000);
+        config.addDefault("Plant.Combos.VineWalk.Cooldown", 20000);
+        config.addDefault("Plant.Combos.VineWalk.GrowInterval", 150);
+        config.addDefault("Plant.Combos.VineWalk.RangeInt", 20);
+        config.addDefault("Plant.Combos.VineWalk.VinesAmount", 5);
+        config.addDefault("Plant.Combos.VineWalk.Description", "This combination will allow you to create vines from the plant that will help you move through the air");
+        config.addDefault("Plant.Combos.VineWalk.Instructions", "(Torrent): sneak -> (WaterSpout): -> sneak, Look at the plant");
+        config.addDefault("Plant.Combos.VineWalk.Combination", List.of("Torrent:SNEAK_DOWN", "Torrent:SNEAK_UP", "WaterSpout:SNEAK_DOWN", "WaterSpout:SNEAK_UP"));
 
 
 
@@ -224,7 +244,6 @@ public final class Hackathon extends JavaPlugin {
 
 
         File file = new File(plugin.getDataFolder(), "PlantArmor_contents.json");
-
 
         if (!file.exists()) {
             try (Writer writer = new FileWriter(file)) {

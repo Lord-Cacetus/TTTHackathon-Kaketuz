@@ -117,7 +117,30 @@ public class VerletRope {
 
 
 
+    public boolean isStretched() {
+        for (VerletStick stick : sticks) {
+            if (stick.getCurrentLength() > segmentLen) return true;
+        }
+        return false;
+    }
 
+    public boolean isStretchedSegment(double threshold) {
+        for (VerletStick stick : sticks) {
+            if (stick.getCurrentLength() >= threshold) return true;
+        }
+        return false;
+    }
+
+    public void normalizeRope(boolean ignoreCollision) {
+        boolean prevCollision = this.collision;
+        if (ignoreCollision) setCollisionEnabled(false);
+
+        for (VerletStick stick : sticks) {
+            stick.setRestLength(segmentLen);
+            stick.constrain();
+        }
+        if (ignoreCollision) setCollisionEnabled(prevCollision);
+    }
 
 
     public void simulate(double delta) {
