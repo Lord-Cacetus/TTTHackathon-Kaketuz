@@ -80,6 +80,16 @@ public final class Hackathon extends JavaPlugin {
         config.addDefault("Plant.PlantArmor.PlantWhip.WhipDuration", 6000);
         config.addDefault("Plant.PlantArmor.PlantWhip.WhipCooldown", 2000);
 
+        config.addDefault("Plant.PlantArmor.SharpLeaf.Speed", 1.5);
+        config.addDefault("Plant.PlantArmor.SharpLeaf.Damage", 0.5);
+        config.addDefault("Plant.PlantArmor.SharpLeaf.Range", 20);
+        config.addDefault("Plant.PlantArmor.SharpLeaf.AngleDirection", 0.07);
+        config.addDefault("Plant.PlantArmor.SharpLeaf.CollisionRadius", 0.5);
+        config.addDefault("Plant.PlantArmor.SharpLeaf.Amount", 7);
+        config.addDefault("Plant.PlantArmor.SharpLeaf.DurabilityTakeCount", 400);
+        config.addDefault("Plant.PlantArmor.SharpLeaf.Cooldown", 8000);
+        config.addDefault("Plant.PlantArmor.SharpLeaf.Message", "- Leafs left: {amount} -");
+
         config.addDefault("Plant.PlantArmor.TenaciousVine.Cooldown", 6000);
         config.addDefault("Plant.PlantArmor.TenaciousVine.ThrowPower", 2.5);
         config.addDefault("Plant.PlantArmor.TenaciousVine.VineSizeInt", 6);

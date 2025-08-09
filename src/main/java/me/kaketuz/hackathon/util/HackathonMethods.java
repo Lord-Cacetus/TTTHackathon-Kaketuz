@@ -10,6 +10,7 @@ import org.bukkit.util.Vector;
 
 import java.util.Collection;
 import java.util.Objects;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Predicate;
 
 public class HackathonMethods {
@@ -54,4 +55,13 @@ public class HackathonMethods {
         double scale = Math.pow(10, decimalPlaces);
         return Math.round(value * scale) / scale;
     }
+
+    public static Vector getRandom() {
+        double pitch = ThreadLocalRandom.current().nextDouble(-90.0, 90.0);
+        double yaw = ThreadLocalRandom.current().nextDouble(-180.0, 180.0);
+        return new Vector(-Math.cos(pitch) * Math.sin(yaw), -Math.sin(pitch), Math.cos(pitch) * Math.cos(yaw));
+    }
+
+
+
 }

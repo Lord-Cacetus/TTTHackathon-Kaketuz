@@ -34,9 +34,10 @@ public class VineWalk extends PlantAbility implements AddonAbility, ComboAbility
     private int vineRange, vinesAmount;
 
     private boolean grew;
-    private long startFlyingTiming, i;
+    private long startFlyingTiming, i, startRemovingTiming;
     private float oldFlySpeed;
     private boolean allowFlight;
+    private boolean removing;
 
     private Block source;
 
@@ -84,54 +85,80 @@ public class VineWalk extends PlantAbility implements AddonAbility, ComboAbility
             remove();
         }
 
-        if (!grew) {
-            if (vines[vinesAmount - 1].getRope().getPoints().size() < vineRange) {
-                if (System.currentTimeMillis() > getStartTime() + i) {
-                    for (Vine vine : vines) {
-                        vine.getRope().setStartPosition(source.getLocation().add(0, 1, 0));
-                        vine.getRope().addSegment();
-                        vine.getRope().applyVelocity(new Vector(
-                                ThreadLocalRandom.current().nextDouble(-0.25, 0.25),
-                                ThreadLocalRandom.current().nextDouble(-0.25, 0.25),
-                                ThreadLocalRandom.current().nextDouble(-0.25, 0.25)
-                        ));
+        if (!removing) {
+            if (!grew) {
+                if (vines[vinesAmount - 1].getRope().getPoints().size() < vineRange) {
+                    if (System.currentTimeMillis() > getStartTime() + i) {
+                        for (Vine vine : vines) {
+                            vine.getRope().setStartPosition(source.getLocation().add(0, 1, 0));
+                            vine.getRope().addSegment();
+                            vine.getRope().applyVelocity(new Vector(
+                                    ThreadLocalRandom.current().nextDouble(-0.25, 0.25),
+                                    ThreadLocalRandom.current().nextDouble(-0.25, 0.25),
+                                    ThreadLocalRandom.current().nextDouble(-0.25, 0.25)
+                            ));
+                        }
+                        i += plantsGrowInterval;
                     }
-                    i += plantsGrowInterval;
+                } else {
+                    for (Vine vine : vines) {
+                        vine.getRope().getPoints().getLast().applyVelocity(GeneralMethods.getDirection(vine.getRope().getRenderPoints().getLast(), player.getLocation()).normalize().multiply(reachSpeed));
+                    }
+                    if (Arrays.stream(vines).allMatch(v -> v.getRope().getRenderPoints().getLast().distance(player.getLocation()) < 0.5)) {
+                        allowFlight = player.getAllowFlight();
+                        if (!player.getAllowFlight()) player.setAllowFlight(true);
+                        player.setFlying(true);
+                        oldFlySpeed = player.getFlySpeed();
+                        startFlyingTiming = System.currentTimeMillis();
+                        player.setFlySpeed((float) flySpeed);
+                        grew = true;
+                    }
+                    if (Arrays.stream(vines).allMatch(v -> v.getRope().getRenderPoints().getLast().distance(player.getLocation()) > vineRange * 2)) {
+                        bPlayer.addCooldown(this);
+                        remove();
+                    }
                 }
-            }
-            else {
+            } else {
                 for (Vine vine : vines) {
-                    vine.getRope().getPoints().getLast().applyVelocity(GeneralMethods.getDirection(vine.getRope().getRenderPoints().getLast(), player.getLocation()).normalize().multiply(reachSpeed));
+                    vine.getRope().setStartPosition(source.getLocation().add(0, 1, 0));
+                    vine.getRope().setEndPosition(player.getLocation());
+
+                    if (player.getLocation().distance(source.getLocation()) > vineRange) {
+                        player.setVelocity(GeneralMethods.getDirection(player.getLocation(), source.getLocation()).normalize());
+
+                    }
                 }
-                if (Arrays.stream(vines).allMatch(v -> v.getRope().getRenderPoints().getLast().distance(player.getLocation()) < 0.5)) {
-                    allowFlight = player.getAllowFlight();
-                    if (!player.getAllowFlight()) player.setAllowFlight(true);
-                    player.setFlying(true);
-                    oldFlySpeed = player.getFlySpeed();
-                    startFlyingTiming = System.currentTimeMillis();
-                    player.setFlySpeed((float) flySpeed);
-                    grew = true;
-                }
-                if (Arrays.stream(vines).allMatch(v -> v.getRope().getRenderPoints().getLast().distance(player.getLocation()) > vineRange * 2)) {
-                    bPlayer.addCooldown(this);
-                    remove();
+                if (System.currentTimeMillis() > startFlyingTiming + duration) {
+                    if (grew) {
+                        player.setAllowFlight(allowFlight);
+                        player.setFlySpeed(oldFlySpeed);
+                        player.setFlying(false);
+                    }
+                    for (Vine vine : vines) {
+                        vine.getRope().setGravity(new Vector(0, -9.8, 0));
+                        vine.getRope().lockPoint(vineRange - 1, false);
+                    }
+                    startRemovingTiming = System.currentTimeMillis();
+                    i = 0;
+                    removing = true;
                 }
             }
         }
         else {
-            for (Vine vine : vines) {
-                vine.getRope().setStartPosition(source.getLocation().add(0, 1, 0));
-                vine.getRope().setEndPosition(player.getLocation());
-
-                if (player.getLocation().distance(source.getLocation()) > vineRange) {
-                    player.setVelocity(GeneralMethods.getDirection(player.getLocation(), source.getLocation()).normalize());
-
-                }
-            }
-            if (System.currentTimeMillis() > startFlyingTiming + duration) {
-                bPlayer.addCooldown(this);
-                remove();
-            }
+           if (System.currentTimeMillis() > startRemovingTiming + i) {
+               for (Vine vine : vines) {
+                   if (vine.getRope().getRenderPoints().size() <= 2) {
+                       Arrays.stream(vines).forEach(Vine::cancel);
+                       bPlayer.addCooldown(this);
+                       remove();
+                       return;
+                   }
+                   vine.getRope().removeSegment();
+                   vine.getDisplays().getLast().remove();
+                   vine.getDisplays().removeLast();
+               }
+               i += 150;
+           }
         }
 
     }
@@ -139,10 +166,7 @@ public class VineWalk extends PlantAbility implements AddonAbility, ComboAbility
     @Override
     public void remove() {
         super.remove();
-        for (Vine vine : vines) {
-            vine.remove(true);
-        }
-        if (grew) {
+        if (grew && !removing) {
             player.setAllowFlight(allowFlight);
             player.setFlySpeed(oldFlySpeed);
             player.setFlying(false);

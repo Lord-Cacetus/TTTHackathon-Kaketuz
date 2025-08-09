@@ -76,6 +76,8 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
     private String durabilityTitle;
     private int jumpBoost, speedBoost, dolphinGraceBoost;
     private static final NamespacedKey ARMOR_UNIQUE_KEY = new NamespacedKey(Hackathon.plugin, "ability.plantarmor.armorkey");
+    private BlockData mostCommonBlock;
+    private final ThreadLocalRandom RANDOM = ThreadLocalRandom.current();
 
     //Ill add more soon
     private static final Map<Biome, BlockData[]> VINE_SKINS = new HashMap<>() {{
@@ -127,6 +129,12 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
     private long whipDuration, whipCooldown;
     private double whipDamage, whipKnockback, whipAnglePower, whipCollisionRadius;
 
+    //SharpLeafs
+    private int leafsAmount, leafsDurabilityTakeCount;
+    private double leafsSpeed, leafsDamage, leafsCollisionRadius, leafsAngleDirection, leafsRange;
+    private long leafsCooldown;
+    private String leafLeftAmountMessage;
+
     //TenaciousVine
     private int tenaciousVineRange, tenaciousVineDurabilityTakeCount;
     private long tenaciousVineStunDuration, tenaciousVineCooldown;
@@ -174,6 +182,16 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         whipDurationTakeCount = Hackathon.config.getInt("Plant.PlantArmor.PlantWhip.DurabilityTake");
         whipDuration = Hackathon.config.getLong("Plant.PlantArmor.PlantWhip.WhipDuration");
         whipCooldown = Hackathon.config.getLong("Plant.PlantArmor.PlantWhip.WhipCooldown");
+
+        leafsSpeed = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaf.Speed");
+        leafsDamage = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaf.Damage");
+        leafsRange = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaf.Range");
+        leafsAngleDirection = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaf.AngleDirection");
+        leafsCollisionRadius = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaf.CollisionRadius");
+        leafsAmount = Hackathon.config.getInt("Plant.PlantArmor.SharpLeaf.Amount");
+        leafsDurabilityTakeCount = Hackathon.config.getInt("Plant.PlantArmor.SharpLeaf.DurabilityTakeCount");
+        leafsCooldown = Hackathon.config.getLong("Plant.PlantArmor.SharpLeaf.Cooldown");
+        leafLeftAmountMessage = Hackathon.config.getString("Plant.PlantArmor.SharpLeaf.Message");
 
         tenaciousVineCooldown = Hackathon.config.getLong("Plant.PlantArmor.TenaciousVine.Cooldown");
         tenaciousVinePower = Hackathon.config.getDouble("Plant.PlantArmor.TenaciousVine.ThrowPower");
@@ -299,7 +317,10 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             if (!isRegenerating) isRegenerating = true;
         }
         if (isFormed) {
-            updateActionBarMessages();
+            if (hasPlantArmorSubAbility(SharpLeafsTask.class) && bPlayer.getBoundAbilityName().equalsIgnoreCase("SharpLeafs")) {
+                String message = leafLeftAmountMessage.replace("{amount}", String.valueOf(getPlantArmorSubAbility(SharpLeafsTask.class).orElseThrow().counter));
+                ActionBar.sendActionBar(getElement().getColor() + message);
+            } else updateActionBarMessages();
             if (jumpBoost > 0) player.addPotionEffect(new PotionEffect(GeneralMethods.getMCVersion() >= 1205 ? PotionEffectType.JUMP_BOOST : PotionEffectType.getByName("JUMP"), 20, jumpBoost - 1, true, false, false));
             if (speedBoost > 0) player.addPotionEffect(new PotionEffect(PotionEffectType.SPEED, 20, speedBoost - 1, true, false, false));
             if (dolphinGraceBoost > 0) player.addPotionEffect(new PotionEffect(PotionEffectType.DOLPHINS_GRACE, 20, dolphinGraceBoost - 1, true, false, false));
@@ -320,6 +341,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                 .max(Map.Entry.comparingByValue())
                 .map(Map.Entry::getKey)
                 .orElse(ThreadLocalRandom.current().nextBoolean() ? Material.AZALEA : Material.FLOWERING_AZALEA);
+        mostCommonBlock = helmetType.createBlockData();
         ItemStack helmet = new ItemStack(!helmetType.isItem() ? (ThreadLocalRandom.current().nextBoolean() ? Material.AZALEA : Material.FLOWERING_AZALEA) : helmetType);
         ItemStack chestplate = new ItemStack(Material.LEATHER_CHESTPLATE);
         ItemStack leggings = new ItemStack(Material.LEATHER_LEGGINGS);
@@ -478,6 +500,14 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             case 0 -> {
                if (type == InteractionType.LEFT_CLICK) new VineWhipTask();
             }
+            case 1 -> {
+                if (type == InteractionType.LEFT_CLICK) {
+                    if (!hasPlantArmorSubAbility(SharpLeafsTask.class)) new SharpLeafsTask();
+                    else {
+                        getPlantArmorSubAbility(SharpLeafsTask.class).orElseThrow().launch();
+                    }
+                }
+            }
             case 2 -> {
                 if (type == InteractionType.LEFT_CLICK) new TenaciousVinesTask();
             }
@@ -631,8 +661,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         @Override
         public void remove() {
             TASKS.remove(this);
-            vine.setDoOnEnd(v -> v.getRope().lockPoint(0, false));
-            vine.remove(true);
+            vine.cancel();
         }
     }
 
@@ -734,8 +763,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         @Override
         public void remove() {
             TASKS.remove(this);
-            vine.setDoOnEnd(v -> v.getRope().lockPoint(0, false));
-            vine.remove(true);
+            vine.cancel();
         }
     }
 
@@ -744,13 +772,9 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         private List<BlockDisplay> displays = new ArrayList<>();
         private long start;
         private BlockData currentSkin;
-        private Location startLoc, end;
-        private boolean isRemoved;
-        private int i;
-        private long startRemovingTiming;
-        private Consumer<Vine> doOnEnd;
+        private Location startLoc, end;;
 
-        private Vine(Location start, Location end, int segments) {
+        public Vine(Location start, Location end, int segments) {
             startLoc = start;
             this.end = end;
             this.rope = new VerletRope(start, end, segments, 1);
@@ -763,25 +787,6 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                     ? VINE_SKINS.get(biome)[ThreadLocalRandom.current().nextInt(VINE_SKINS.get(biome).length)]
                     : Material.BIG_DRIPLEAF_STEM.createBlockData();
             runTaskTimer(Hackathon.plugin, 1L, 0);
-        }
-
-        public Vine() throws IllegalAccessException {
-            throw new IllegalAccessException("The Vine class constructor cannot be called directly");
-        }
-
-        public void setDoOnEnd(Consumer<Vine> doOnEnd) {
-            this.doOnEnd = doOnEnd;
-        }
-
-        public void remove(boolean withAnimation) {
-            if (!withAnimation) {
-                cancel();
-            }
-            else {
-                rope.setGravity(new Vector(0, -9.8, 0));
-                isRemoved = true;
-                startRemovingTiming = System.currentTimeMillis();
-            }
         }
 
 
@@ -819,94 +824,74 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         public void run() {
             rope.setConstraintIterations(10);
             rope.simulate(0.016);
+            if (rope.getRenderPoints().size() > displays.size()) {
+                for (int i = displays.size(); i < rope.getRenderPoints().size(); i++) {
+                    BlockDisplay display = (BlockDisplay) rope.getRenderPoints().get(i).getWorld().spawnEntity(rope.getRenderPoints().get(i), EntityType.BLOCK_DISPLAY);
+                    display.setBlock(currentSkin);
+                    display.setPersistent(false);
+                    Transformation t = display.getTransformation();
+                    t.getTranslation().set(new Vector3f(-0.5f, -0.5f, -0.5f));
+                    display.setTransformation(t);
+                    displays.add(display);
+                }
+            }
+            List<Location> points = rope.getRenderPoints();
+            for (int i = 0; i < points.size(); i++) {
+                Location loc = points.get(i).clone();
 
-                if (!isRemoved) {
-                    if (rope.getRenderPoints().size() > displays.size()) {
-                        for (int i = displays.size(); i < rope.getRenderPoints().size(); i++) {
-                            BlockDisplay display = (BlockDisplay) rope.getRenderPoints().get(i).getWorld().spawnEntity(rope.getRenderPoints().get(i), EntityType.BLOCK_DISPLAY);
-                            display.setBlock(currentSkin);
-                            display.setPersistent(false);
-                            Transformation t = display.getTransformation();
-                            t.getTranslation().set(new Vector3f(-0.5f, -0.5f, -0.5f));
-                            display.setTransformation(t);
-                            displays.add(display);
-                        }
+
+                Vector direction;
+                if (i > 0 && i < points.size() - 1) {
+
+                    Vector before = GeneralMethods.getDirection(points.get(i - 1), points.get(i));
+                    Vector after = GeneralMethods.getDirection(points.get(i), points.get(i + 1));
+                    direction = before.add(after).normalize();
+                } else if (i < points.size() - 1) {
+                    direction = GeneralMethods.getDirection(points.get(i), points.get(i + 1));
+                } else {
+                    direction = GeneralMethods.getDirection(points.get(i - 1), points.get(i));
+                }
+
+                loc.setDirection(direction);
+
+                float pitch = loc.getPitch();
+                pitch = (pitch >= 0) ? pitch - 90 : pitch + 90;
+                loc.setPitch(pitch);
+
+
+                if (i < displays.size()) {
+                    displays.get(i).setTeleportDuration(2);
+                    displays.get(i).teleport(loc);
+                }
+
+                BlockDisplay display = displays.get(i);
+                BlockData dat = display.getBlock();
+
+                if (dat instanceof CaveVinesPlant cvp) {
+                    if (cvp.isBerries() && isAir(display.getLocation().getBlock().getType())) {
+                        new TempBlock(display.getLocation().getBlock(),
+                                Material.LIGHT.createBlockData(d -> ((Levelled) d).setLevel(13)))
+                                .setRevertTime(10);
                     }
                 }
-               if (displays.size() == rope.getRenderPoints().size()) {
-                   List<Location> points = rope.getRenderPoints();
-                   for (int i = 0; i < points.size(); i++) {
-                       Location loc = points.get(i).clone();
 
-
-                       Vector direction;
-                       if (i > 0 && i < points.size() - 1) {
-
-                           Vector before = GeneralMethods.getDirection(points.get(i - 1), points.get(i));
-                           Vector after = GeneralMethods.getDirection(points.get(i), points.get(i + 1));
-                           direction = before.add(after).normalize();
-                       } else if (i < points.size() - 1) {
-                           direction = GeneralMethods.getDirection(points.get(i), points.get(i + 1));
-                       } else {
-                           direction = GeneralMethods.getDirection(points.get(i - 1), points.get(i));
-                       }
-
-                       loc.setDirection(direction);
-
-                       float pitch = loc.getPitch();
-                       if (pitch > 0) pitch -= 90;
-                       else if (pitch == 0) pitch = 90;
-                       else pitch += 90;
-                       loc.setPitch(pitch);
-
-
-                       if (i < displays.size()) {
-                           displays.get(i).setTeleportDuration(2);
-                           displays.get(i).teleport(loc);
-                       }
-
-                       BlockDisplay display = displays.get(i);
-                       BlockData dat = display.getBlock();
-
-                       if (dat instanceof CaveVinesPlant cvp) {
-                           if (cvp.isBerries() && isAir(display.getLocation().getBlock().getType())) {
-                               new TempBlock(display.getLocation().getBlock(),
-                                       Material.LIGHT.createBlockData(d -> ((Levelled) d).setLevel(13)))
-                                       .setRevertTime(10);
-                           }
-                       }
-
-                       if (!displays.getLast().equals(display)) {
-                           if (dat instanceof CaveVines)
-                               display.setBlock(Material.CAVE_VINES_PLANT.createBlockData(d -> ((CaveVines) d).setBerries(((CaveVinesPlant) dat).isBerries())));
-                           else if (dat.getMaterial() == Material.WEEPING_VINES)
-                               display.setBlock(Material.WEEPING_VINES_PLANT.createBlockData());
-                           else if (dat.getMaterial() == Material.TWISTING_VINES)
-                               display.setBlock(Material.TWISTING_VINES_PLANT.createBlockData());
-                       }
-                       BlockDisplay last = displays.getLast();
-                       BlockData datlast = last.getBlock();
-                       if (datlast instanceof CaveVinesPlant)
-                           last.setBlock(Material.CAVE_VINES.createBlockData(d -> ((Ageable) d).setAge(25)));
-                       else if (datlast.getMaterial() == Material.WEEPING_VINES_PLANT)
-                           last.setBlock(Material.WEEPING_VINES.createBlockData(d -> ((Ageable) d).setAge(25)));
-                       else if (datlast.getMaterial() == Material.TWISTING_VINES_PLANT)
-                           last.setBlock(Material.TWISTING_VINES.createBlockData(d -> ((Ageable) d).setAge(25)));
-                   }
-                   if (isRemoved) {
-                       if (System.currentTimeMillis() > startRemovingTiming + i) {
-                           if (doOnEnd != null) doOnEnd.accept(this);
-                           rope.removeSegment();
-                           displays.getLast().remove();
-                           displays.removeLast();
-                           if (rope.getRenderPoints().size() <= 2) {
-                               cancel();
-                               return;
-                           }
-                           i += 100;
-                       }
-                   }
-               }
+                if (!displays.getLast().equals(display)) {
+                    if (dat instanceof CaveVines)
+                        display.setBlock(Material.CAVE_VINES_PLANT.createBlockData(d -> ((CaveVines) d).setBerries(((CaveVinesPlant) dat).isBerries())));
+                    else if (dat.getMaterial() == Material.WEEPING_VINES)
+                        display.setBlock(Material.WEEPING_VINES_PLANT.createBlockData());
+                    else if (dat.getMaterial() == Material.TWISTING_VINES)
+                        display.setBlock(Material.TWISTING_VINES_PLANT.createBlockData());
+                }
+                BlockDisplay last = displays.getLast();
+                BlockData datlast = last.getBlock();
+                if (datlast instanceof CaveVinesPlant)
+                    last.setBlock(Material.CAVE_VINES.createBlockData(d -> ((Ageable) d).setAge(25)));
+                else if (datlast.getMaterial() == Material.WEEPING_VINES_PLANT)
+                    last.setBlock(Material.WEEPING_VINES.createBlockData(d -> ((Ageable) d).setAge(25)));
+                else if (datlast.getMaterial() == Material.TWISTING_VINES_PLANT)
+                    last.setBlock(Material.TWISTING_VINES.createBlockData(d -> ((Ageable) d).setAge(25)));
+            }
         }
     }
 
@@ -1058,6 +1043,8 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                 Location rightLoc = GeneralMethods.getRightSide(player.getLocation().add(0, 1, 0), 0.4);
                 left = new Vine(leftLoc, player.getLocation(), 10);
                 right = new Vine(rightLoc, player.getLocation(), 10);
+                left.getRope().setCollisionEnabled(false);
+                right.getRope().setCollisionEnabled(false);
                 left.getRope().setGravity(new Vector(0, -9.8, 0));
                 right.getRope().setGravity(new Vector(0, -9.8, 0));
                 player.setVelocity(player.getLocation().getDirection().multiply(leapMinPower));
@@ -1076,6 +1063,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             if (type == InteractionType.SNEAK_DOWN) {
                 if (player.isSneaking() && !flag) {
                     player.sendTitle("", buildTitleText(), 0, 10, 0);
+                    if (!player.isOnGround()) remove();
                     if (currStage <= leapMaxStages) {
                         if (System.currentTimeMillis() > start + leapI) {
                             currPower += leapPowerPerPower;
@@ -1091,6 +1079,8 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                         Location rightLoc = GeneralMethods.getRightSide(player.getLocation().add(0, 1, 0), 0.4);
                         left = new Vine(leftLoc, player.getLocation(), 10);
                         right = new Vine(rightLoc, player.getLocation(), 10);
+                        left.getRope().setCollisionEnabled(false);
+                        right.getRope().setCollisionEnabled(false);
                         left.getRope().setGravity(new Vector(0, -9.8, 0));
                         right.getRope().setGravity(new Vector(0, -9.8, 0));
                         player.setVelocity(player.getLocation().getDirection().multiply(currPower));
@@ -1125,8 +1115,8 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
         @Override
         public void remove() {
-            left.cancel();
-            right.cancel();
+            if (left != null) left.cancel();
+            if (right != null) right.cancel();
             TASKS.remove(this);
         }
     }
@@ -1134,6 +1124,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
     private class TenaciousVinesTask implements LocalTask {
 
         private Vine vine;
+        private long start;
 
         public TenaciousVinesTask() {
             if (bPlayer.isOnCooldown("TenaciousVines")) {
@@ -1153,6 +1144,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             vine.getRope().lockPoint(0, false);
             vine.getRope().setGravity(new Vector(0, -9.8, 0));
             vine.getRope().applyVelocity(player.getLocation().getDirection().multiply(tenaciousVinePower));
+            this.start = System.currentTimeMillis();
             TASKS.add(this);
         }
 
@@ -1176,16 +1168,143 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                         });
             }
             if (vine.getRope().getRenderPoints().stream().allMatch(l -> GeneralMethods.isSolid(l.clone().subtract(0, 0.1, 0).getBlock()))) remove();
-            if (System.currentTimeMillis() > getStartTime() + 10000) remove();
+            if (System.currentTimeMillis() > start + 10000) remove();
         }
 
         @Override
         public void remove() {
-            vine.remove(false);
+            vine.cancel();
             TASKS.remove(this);
         }
     }
 
+
+    private class Leaf implements LocalTask {
+
+        private Location origin, location;
+        private Vector direction;
+        private BlockDisplay display;
+
+        public Leaf() {
+            origin = player.getEyeLocation();
+            location = origin.clone().add(HackathonMethods.getRandom().multiply(0.25));
+            direction = player.getLocation().getDirection().multiply(leafsSpeed);
+
+            display = (BlockDisplay) origin.getWorld().spawnEntity(location.clone().add(0.5, 0.5, 0.5), EntityType.BLOCK_DISPLAY);
+            display.setTransformation(new Transformation(
+                    new Vector3f(-0.5f, -0.5f, -0.5f),
+                    new Quaternionf().rotateLocalX(RANDOM.nextFloat()).rotateLocalY(RANDOM.nextFloat()).rotateLocalZ(RANDOM.nextFloat()),
+                    new Vector3f(0.3f, 0.01f, 0.4f),
+                    new Quaternionf()
+            ));
+            display.setBlock(mostCommonBlock);
+            display.setPersistent(false);
+
+            TASKS.add(this);
+        }
+
+        @Override
+        public void update() {
+            location = location.add(direction);
+            display.setTeleportDuration(1);
+            display.teleport(location);
+            if (origin.distance(location) >= leafsRange) {
+                if (GeneralMethods.getMCVersion() < 1215) {
+                    direction = direction.subtract(new Vector(0, 0.06, 0));
+                }
+                else {
+                    location.getWorld().spawnParticle(Particle.TINTED_LEAVES, location, 1, 0, 0, 0, 0, mostCommonBlock.getMapColor());
+                    removeLeaf(true);
+                }
+            }
+            else direction.normalize().add(player.getLocation().getDirection().multiply(leafsAngleDirection));
+
+            RayTraceResult result = player.getWorld().rayTrace(location, direction, leafsSpeed, FluidCollisionMode.NEVER, true, leafsCollisionRadius, e -> e instanceof LivingEntity && !e.getUniqueId().equals(player.getUniqueId()));
+
+            Optional.ofNullable(result)
+                    .ifPresent(r -> {
+                        Optional.ofNullable(r.getHitBlock())
+                                .ifPresent(b -> removeLeaf(false));
+                        Optional.ofNullable(r.getHitEntity())
+                                .map(e -> ((LivingEntity)e))
+                                .ifPresent(le -> {
+                                    DamageHandler.damageEntity(le, player, leafsDamage, PlantArmor.this);
+                                    le.setNoDamageTicks(0);
+                                    le.setVelocity(new Vector().zero());
+                                    removeLeaf(true);
+                                });
+                    });
+            if (!display.isValid()) remove();
+        }
+
+
+        public void removeLeaf(boolean forced) {
+            if (!forced) Bukkit.getScheduler().runTaskLater(Hackathon.plugin, display::remove, 120);
+            else display.remove();
+            remove();
+        }
+
+        @Override
+        public void remove() {
+            TASKS.remove(this);
+        }
+    }
+
+    private class SharpLeafsTask implements LocalTask {
+
+        private int counter;
+
+        public SharpLeafsTask() {
+            if (bPlayer.isOnCooldown("SharpLeafs")) {
+                bPlayer.addCooldown("PlantArmorActionMsg", 2000);
+                ActionBar.sendActionBar(ChatColor.RED + cooldownMessage, player);
+                return;
+            }
+            if (currentDurability - leafsDurabilityTakeCount <= 0) {
+                bPlayer.addCooldown("PlantArmorActionMsg", 2000);
+                ActionBar.sendActionBar(ChatColor.RED + notEnoughDurabilityMessage, player);
+                return;
+            }
+            counter++;
+            launch();
+            currentDurability -= leafsDurabilityTakeCount;
+            TASKS.add(this);
+        }
+
+        public void launch() {
+            counter++;
+            new Leaf();
+        }
+
+        @Override
+        public void update() {
+            bPlayer.addCooldown("SharpLeafs", leafsCooldown);
+            if (counter > leafsAmount) remove();
+        }
+
+        @Override
+        public void remove() {
+            TASKS.remove(this);
+        }
+    }
+
+    public boolean hasPlantArmorSubAbility(Class<? extends LocalTask> clazz) {
+        return TASKS.stream().anyMatch(lt -> lt.getClass().equals(clazz));
+    }
+
+
+    public <T> Optional<T> getPlantArmorSubAbility(Class<T> clazz) {
+        if (!LocalTask.class.isAssignableFrom(clazz)) {
+            return Optional.empty();
+        }
+
+        for (LocalTask task : TASKS) {
+            if (clazz.isInstance(task)) {
+                return Optional.of(clazz.cast(task));
+            }
+        }
+        return Optional.empty();
+    }
 
 
 }
