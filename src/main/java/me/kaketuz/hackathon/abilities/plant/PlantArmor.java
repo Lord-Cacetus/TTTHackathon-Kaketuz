@@ -46,7 +46,9 @@ import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
+import org.joml.Matrix4f;
 import org.joml.Quaternionf;
+import org.joml.Vector2dc;
 import org.joml.Vector3f;
 
 import java.lang.reflect.Field;
@@ -152,6 +154,12 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
     private long leapCooldown, leapLevelupInterval;
 
+    //LeafShield
+    private double shieldRadius, shieldOffset, shieldThrowSpeed, shieldThrowDamage, shieldThrowRange, shieldSphereRadius;
+    private long shieldSphereDuration, shieldThrowCooldown, shieldCooldown;
+    private int shieldDurabilityTakeCount;
+
+
     //RegeneratingAssembly
     private long regenCooldown;
 
@@ -215,6 +223,17 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         leapLevelupInterval = Hackathon.config.getInt("Plant.PlantArmor.Leap.LevelUpInterval");
         leapDurabilityTakeCount = Hackathon.config.getInt("Plant.PlantArmor.Leap.DurabilityTakeCount");
 
+        shieldOffset = Hackathon.config.getDouble("Plant.PlantArmor.LeafShield.Offset");
+        shieldRadius = Hackathon.config.getDouble("Plant.PlantArmor.LeafShield.Radius");
+        shieldThrowRange = Hackathon.config.getDouble("Plant.PlantArmor.LeafShield.Throw.Range");
+        shieldThrowDamage = Hackathon.config.getDouble("Plant.PlantArmor.LeafShield.Throw.Damage");
+        shieldThrowSpeed = Hackathon.config.getDouble("Plant.PlantArmor.LeafShield.Throw.Speed");
+        shieldThrowCooldown = Hackathon.config.getLong("Plant.PlantArmor.LeafShield.Throw.Cooldown");
+        shieldSphereRadius = Hackathon.config.getDouble("Plant.PlantArmor.LeafShield.Sphere.Radius");
+        shieldSphereDuration = Hackathon.config.getLong("Plant.PlantArmor.LeafShield.Sphere.Duration");
+        shieldDurabilityTakeCount = Hackathon.config.getInt("Plant.PlantArmor.LeafShield.DurabilityTakeCount");
+        shieldCooldown = Hackathon.config.getLong("Plant.PlantArmor.LeafShield.Cooldown");
+
 
         regenCooldown = Hackathon.config.getLong("Plant.PlantArmor.RegeneratingAssembly.Cooldown");
 
@@ -254,8 +273,13 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             if (ChatColor.stripColor(bPlayer.getBoundAbilityName()).equalsIgnoreCase(m.getName())) {
                 if (!bPlayer.isOnCooldown("PlantArmorActionMsg")) {
                     if (bPlayer.isOnCooldown(m.getName())) {
-                        final Pair<Long, Long> cooldown = COOLDOWNS.get(m.getName());
-                        ActionBar.sendActionBar(ChatColor.RED + "❌ " + ChatColor.STRIKETHROUGH + m.getName() + ChatColor.RESET + ChatColor.RED + " - " + HackathonMethods.round((double) ((cooldown.getLeft() + cooldown.getRight()) - System.currentTimeMillis()) / 1000, 1) + "s", player);
+                        if (player.getInventory().getHeldItemSlot() == 1 && hasPlantArmorSubAbility(SharpLeafsTask.class)) {
+                            ActionBar.sendActionBar(getElement().getColor() + leafLeftAmountMessage.replace("{amount}", String.valueOf(leafsAmount - getPlantArmorSubAbility(SharpLeafsTask.class).orElseThrow().counter + 1)), player);
+                        }
+                        else {
+                            final Pair<Long, Long> cooldown = COOLDOWNS.get(m.getName());
+                            ActionBar.sendActionBar(ChatColor.RED + "❌ " + ChatColor.STRIKETHROUGH + m.getName() + ChatColor.RESET + ChatColor.RED + " - " + HackathonMethods.round((double) ((cooldown.getLeft() + cooldown.getRight()) - System.currentTimeMillis()) / 1000, 1) + "s", player);
+                        }
                     }
                     else {
                         ActionBar.sendActionBar(ChatColor.GREEN + "✅ " + m.getAbilityColor() + m.getName(), player);
@@ -516,6 +540,9 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             }
             case 4 -> {
                 if (type == InteractionType.LEFT_CLICK || type == InteractionType.SNEAK_DOWN) new LeapTask(type);
+            }
+            case 5 -> {
+                if (type == InteractionType.SNEAK_DOWN) new PlantShieldTask();
             }
             case 7 -> {
                 if (type == InteractionType.SNEAK_DOWN) isRegenerating = true;
@@ -852,14 +879,17 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                     direction = GeneralMethods.getDirection(points.get(i - 1), points.get(i));
                 }
 
-                loc.setDirection(direction);
-
-                float pitch = loc.getPitch();
-                pitch = (pitch >= 0) ? pitch - 90 : pitch + 90;
-                loc.setPitch(pitch);
 
 
                 if (i < displays.size()) {
+                    Vector3f lookDir = direction.toVector3f().normalize();
+                    Quaternionf lookRot = new Quaternionf().lookAlong(lookDir, new Vector3f(0, 1, 0));
+                    Quaternionf extraRot = new Quaternionf().rotateY((float) Math.toRadians(90));
+                    lookRot.mul(extraRot);
+                    displays.get(i).setTransformationMatrix(
+                            new Matrix4f()
+                                    .rotate(lookRot)
+                                    .translate(-.5f, -.5f, -.5f));
                     displays.get(i).setTeleportDuration(2);
                     displays.get(i).teleport(loc);
                 }
@@ -1306,5 +1336,62 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         return Optional.empty();
     }
 
+    private class PlantShieldTask implements LocalTask {
+
+        private List<BlockDisplay> displays;
+
+        public PlantShieldTask() {
+            if (bPlayer.isOnCooldown("PlantShield")) {
+                bPlayer.addCooldown("PlantArmorActionMsg", 2000);
+                ActionBar.sendActionBar(ChatColor.RED + cooldownMessage, player);
+                return;
+            }
+            if (currentDurability - shieldDurabilityTakeCount <= 0) {
+                bPlayer.addCooldown("PlantArmorActionMsg", 2000);
+                ActionBar.sendActionBar(ChatColor.RED + notEnoughDurabilityMessage, player);
+                return;
+            }
+            displays = new ArrayList<>();
+            Location center = GeneralMethods.getTargetedLocation(player, shieldOffset);
+            for (int i = 1; i <= shieldRadius; ++i) {
+                for (double angle = 0; angle < 360; angle += (double) 360 / (i * 9)) {
+                    Vector ortho = GeneralMethods.getOrthogonalVector(player.getLocation().getDirection(), angle, i);
+                    Location origin = GeneralMethods.getTargetedLocation(player, shieldOffset);
+                    Location target = origin.clone().add(ortho);
+                    if (GeneralMethods.isSolid(target.getBlock())) continue;
+                    Vector3f offset = GeneralMethods.getDirection(origin, target).toVector3f();
+                    BlockDisplay display = (BlockDisplay) origin.getWorld().spawnEntity(origin.add(0.5, 0.5, 0.5), EntityType.BLOCK_DISPLAY);
+                    display.setBlock(mostCommonBlock);
+                    display.setPersistent(false);
+                    Transformation t = display.getTransformation();
+                    t.getTranslation().set(new Vector3f(-0.5f, -0.5f, -0.5f).add(offset));
+                    display.setTransformation(t);
+                    displays.add(display);
+                    center.subtract(ortho);
+                }
+            }
+
+
+            TASKS.add(this);
+        }
+
+        @Override
+        public void update() {
+            bPlayer.addCooldown("PlantShield", shieldCooldown);
+            displays.forEach(db -> {
+                final Location target = GeneralMethods.getTargetedLocation(player, shieldOffset, Material.BARRIER);
+                db.teleport(target);
+                if (!GeneralMethods.isSolid(target.getBlock())) new TempBlock(target.getBlock(), Material.BARRIER).setRevertTime(100);
+            });
+
+            if (!player.isSneaking() || player.getInventory().getHeldItemSlot() != 5) remove();
+        }
+
+        @Override
+        public void remove() {
+            displays.forEach(BlockDisplay::remove);
+            TASKS.remove(this);
+        }
+    }
 
 }

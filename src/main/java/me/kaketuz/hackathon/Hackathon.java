@@ -10,11 +10,13 @@ import com.projectkorra.projectkorra.ability.CoreAbility;
 import com.projectkorra.projectkorra.ability.ElementalAbility;
 import com.projectkorra.projectkorra.configuration.ConfigManager;
 import me.kaketuz.hackathon.abilities.plant.PlantArmor;
+import me.kaketuz.hackathon.abilities.plant.combos.VineWalk;
 import me.kaketuz.nightmarelib.lib.logger.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.event.HandlerList;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.*;
@@ -50,7 +52,9 @@ public final class Hackathon extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        // Plugin shutdown logic
+        CoreAbility.getAbilities(PlantArmor.class).forEach(PlantArmor::remove);
+        CoreAbility.getAbilities(VineWalk.class).forEach(VineWalk::remove);
+        HandlerList.unregisterAll(this);
     }
 
     public static void shutdown() {
@@ -111,6 +115,17 @@ public final class Hackathon extends JavaPlugin {
         config.addDefault("Plant.PlantArmor.Leap.Cooldown", 7000);
         config.addDefault("Plant.PlantArmor.Leap.LevelUpInterval", 1000);
         config.addDefault("Plant.PlantArmor.Leap.DurabilityTakeCount", 200);
+
+        config.addDefault("Plant.PlantArmor.LeafShield.Offset", 5);
+        config.addDefault("Plant.PlantArmor.LeafShield.Radius", 4);
+        config.addDefault("Plant.PlantArmor.LeafShield.Throw.Range", 15);
+        config.addDefault("Plant.PlantArmor.LeafShield.Throw.Damage", 2);
+        config.addDefault("Plant.PlantArmor.LeafShield.Throw.Speed", 1);
+        config.addDefault("Plant.PlantArmor.LeafShield.Throw.Cooldown", 8000);
+        config.addDefault("Plant.PlantArmor.LeafShield.Sphere.Radius", 4);
+        config.addDefault("Plant.PlantArmor.LeafShield.Sphere.Duration", 6000);
+        config.addDefault("Plant.PlantArmor.LeafShield.DurabilityTakeCount", 400);
+        config.addDefault("Plant.PlantArmor.LeafShield.Cooldown", 10000);
 
         config.addDefault("Plant.PlantArmor.RegeneratingAssembly.Cooldown", 10000);
 
