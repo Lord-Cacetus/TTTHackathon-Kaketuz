@@ -241,14 +241,20 @@ public class VerletRope {
         if (!points.isEmpty()) {
             VerletPoint start = points.getFirst();
             start.setPosition(loc.toVector());
+            start.setPrevious(loc.toVector());
         }
     }
 
     public void setEndPosition(Location loc) {
         if (points.size() > 1) {
-            VerletPoint end = points.get(points.size() - 1);
+            VerletPoint end = points.getLast();
             end.setPosition(loc.toVector());
+            end.setPrevious(loc.toVector());
             end.lock(true);
+            for (int i = 0; i < Math.max(2, constraintIterations); i++) {
+                for (VerletStick s : sticks) s.constrain();
+            }
         }
     }
+
 }

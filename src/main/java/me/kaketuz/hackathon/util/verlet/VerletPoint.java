@@ -68,14 +68,6 @@ public class VerletPoint {
         return position;
     }
 
-    public void setPosition(Vector position) {
-        this.position = position;
-    }
-
-    public void lock(boolean locked) {
-        this.locked = locked;
-    }
-
     public boolean isLocked() {
         return locked;
     }
@@ -90,5 +82,21 @@ public class VerletPoint {
 
     public Location getPositionLoc() {
         return position.toLocation(world);
+    }
+
+    public void lock(boolean locked) {
+        this.locked = locked;
+        if (locked) {
+            this.previous = this.position.clone();
+        }
+    }
+
+    public void setPosition(Vector position) {
+        this.position = position;
+        if (locked) this.previous = position.clone();
+    }
+
+    public void zeroVelocity() {
+        this.previous = this.position.clone();
     }
 }

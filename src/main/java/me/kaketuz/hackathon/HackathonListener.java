@@ -48,7 +48,7 @@ public class HackathonListener implements Listener {
 
         if (bPlayer == null) return;
 
-        if (CoreAbility.hasAbility(player, PlantArmor.class) && event.getAction() == Action.LEFT_CLICK_AIR && event.getHand() == EquipmentSlot.HAND) {
+        if (CoreAbility.hasAbility(player, PlantArmor.class) && event.getHand() == EquipmentSlot.HAND) {
             PlantArmor.redirectEvent(PlantArmor.InteractionType.LEFT_CLICK, player);
         }
 
