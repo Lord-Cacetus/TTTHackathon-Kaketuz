@@ -83,6 +83,9 @@ public class VerletPoint {
     public Location getPositionLoc() {
         return position.toLocation(world);
     }
+    public Location getPreviousLoc() {
+        return previous.toLocation(world);
+    }
 
     public void lock(boolean locked) {
         this.locked = locked;

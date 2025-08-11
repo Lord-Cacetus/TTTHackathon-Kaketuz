@@ -11,7 +11,6 @@ import com.projectkorra.projectkorra.ability.ElementalAbility;
 import com.projectkorra.projectkorra.configuration.ConfigManager;
 import me.kaketuz.hackathon.abilities.plant.PlantArmor;
 import me.kaketuz.hackathon.abilities.plant.combos.VineWalk;
-import me.kaketuz.nightmarelib.lib.logger.Logger;
 import org.bukkit.Bukkit;
 import org.bukkit.Material;
 import org.bukkit.configuration.file.FileConfiguration;
@@ -75,6 +74,7 @@ public final class Hackathon extends JavaPlugin {
         config.addDefault("Plant.PlantArmor.General.NotEnoughDurabilityMessage", "<! Not enough durability !>");
 
         config.addDefault("Plant.PlantArmor.PlantWhip.Damage", 2);
+        config.addDefault("Plant.PlantArmor.PlantWhip.MinimalSlapPower", 1.5);
         config.addDefault("Plant.PlantArmor.PlantWhip.Knockback", 1.5);
         config.addDefault("Plant.PlantArmor.PlantWhip.AnglePower", 0.2);
         config.addDefault("Plant.PlantArmor.PlantWhip.DurabilityTake", 200);
@@ -127,7 +127,15 @@ public final class Hackathon extends JavaPlugin {
         config.addDefault("Plant.PlantArmor.LeafShield.DurabilityTakeCount", 400);
         config.addDefault("Plant.PlantArmor.LeafShield.Cooldown", 10000);
 
+        config.addDefault("Plant.PlantArmor.Dome.Radius", 5);
+        config.addDefault("Plant.PlantArmor.Dome.Cooldown", 12000);
+        config.addDefault("Plant.PlantArmor.Dome.Duration", 10000);
+        config.addDefault("Plant.PlantArmor.Dome.GrowInterval", 200);
+        config.addDefault("Plant.PlantArmor.Dome.DurabilityTakeCount", 400);
+        config.addDefault("Plant.PlantArmor.Dome.SegmentDamage", 1);
+
         config.addDefault("Plant.PlantArmor.RegeneratingAssembly.Cooldown", 10000);
+
 
         config.addDefault("Plant.Combos.VineWalk.FlySpeed", 0.1);
         config.addDefault("Plant.Combos.VineWalk.SourceRange", 15);

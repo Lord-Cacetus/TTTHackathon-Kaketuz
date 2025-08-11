@@ -150,7 +150,10 @@ public class VerletRope {
         }
 
         for (int i = 0; i < constraintIterations; i++) {
-            for (VerletStick s : sticks) s.constrain();
+            for (VerletStick s : sticks) {
+                s.setRestLength(segmentLen);
+                s.constrain();
+            }
             if (collision) handleCollision();
         }
     }

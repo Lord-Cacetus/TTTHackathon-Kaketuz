@@ -6,7 +6,6 @@ import com.projectkorra.projectkorra.ability.CoreAbility;
 import com.projectkorra.projectkorra.event.BendingReloadEvent;
 import com.projectkorra.projectkorra.event.PlayerCooldownChangeEvent;
 import me.kaketuz.hackathon.abilities.plant.PlantArmor;
-import me.kaketuz.nightmarelib.lib.vfx.VFX;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
