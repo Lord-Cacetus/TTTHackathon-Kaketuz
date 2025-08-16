@@ -1,4 +1,4 @@
-name: Hackathon
+name: KaketuzHackathon
 version: '1.0.0'
 main: me.kaketuz.hackathon.Hackathon
 api-version: '1.20'

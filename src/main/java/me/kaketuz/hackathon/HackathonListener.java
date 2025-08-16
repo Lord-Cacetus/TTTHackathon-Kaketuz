@@ -5,17 +5,23 @@ import com.projectkorra.projectkorra.GeneralMethods;
 import com.projectkorra.projectkorra.ability.CoreAbility;
 import com.projectkorra.projectkorra.event.BendingReloadEvent;
 import com.projectkorra.projectkorra.event.PlayerCooldownChangeEvent;
+import com.projectkorra.projectkorra.util.TempBlock;
 import me.kaketuz.hackathon.abilities.plant.PlantArmor;
+import me.kaketuz.hackathon.abilities.plant.combos.VineWalk;
+import org.bukkit.Bukkit;
 import org.bukkit.GameMode;
 import org.bukkit.Material;
 import org.bukkit.entity.Player;
+import org.bukkit.event.Event;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
+import org.bukkit.event.block.LeavesDecayEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.*;
+import org.bukkit.event.server.ServerLoadEvent;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
@@ -55,40 +61,51 @@ public class HackathonListener implements Listener {
 
     @EventHandler
     public void onInventoryClick(InventoryClickEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player)) return;
+
         ItemStack current = event.getCurrentItem();
         if (current == null || current.getType() == Material.AIR) return;
 
-        if (PlantArmor.isPlantArmor(current)) {
+        if (PlantArmor.isPlantArmor(current) ||
+                (current.getItemMeta() != null &&
+                        current.getItemMeta().getPersistentDataContainer().has(PlantArmor.ARMOR_UNIQUE_KEY))) {
+
             event.setCancelled(true);
-            current.setType(Material.AIR);
+
+            Bukkit.getScheduler().runTaskLater(Hackathon.plugin, () -> {
+                player.getInventory().setItem(event.getSlot(), current);
+                player.updateInventory();
+            }, 1L);
         }
     }
 
     @EventHandler
     public void onInventoryDrag(InventoryDragEvent event) {
-        ItemStack current = event.getCursor();
-        if (current == null || current.getType() == Material.AIR) return;
-
-        if (PlantArmor.isPlantArmor(current)) {
-            event.setCancelled(true);
-            current.setType(Material.AIR);
+        for (int slot : event.getRawSlots()) {
+            if (slot < event.getView().getTopInventory().getSize()) continue;
+            ItemStack item = event.getOldCursor();
+            if (PlantArmor.isPlantArmor(item)) {
+                event.setCancelled(true);
+                return;
+            }
         }
     }
 
-    @EventHandler
-    public void onInventoryDrop(PlayerDropItemEvent event) {
-        ItemStack current = event.getItemDrop().getItemStack();
 
-        if (PlantArmor.isPlantArmor(current)) {
-            event.setCancelled(true);
-            current.setType(Material.AIR);
-        }
-    }
+
 
     @EventHandler
     public void onBendingReload(BendingReloadEvent event) {
         Hackathon.plugin.reloadConfig();
         Hackathon.registerConfig();
+    }
+
+    @EventHandler
+    public void onServerShutdown(ServerLoadEvent event) {
+        if (event.getType() == ServerLoadEvent.LoadType.RELOAD) {
+            CoreAbility.getAbilities(PlantArmor.class).forEach(PlantArmor::remove);
+            CoreAbility.getAbilities(VineWalk.class).forEach(VineWalk::remove);
+        }
     }
 
     @EventHandler
@@ -121,6 +138,17 @@ public class HackathonListener implements Listener {
                 }
             }
         }
+    }
+
+    @EventHandler
+    public void onLeavesDecay(LeavesDecayEvent event) {
+        if (!TempBlock.isTempBlock(event.getBlock())) return;
+        final TempBlock temp = TempBlock.get(event.getBlock());
+
+        if (PlantArmor.getALL_COLLECTED_TEMP_BLOCKS().contains(temp)) {
+            event.setCancelled(true);
+        }
+
     }
 
 

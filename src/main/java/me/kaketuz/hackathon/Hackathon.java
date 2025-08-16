@@ -29,7 +29,6 @@ public final class Hackathon extends JavaPlugin {
 
     public static Hackathon plugin;
     public static FileConfiguration config;
-    public static boolean hasOraxen;
     public static final Gson plantArmor_values = new GsonBuilder().setPrettyPrinting().create();
 
 
@@ -38,7 +37,6 @@ public final class Hackathon extends JavaPlugin {
         plugin = this;
         config = this.getConfig();
 
-        hasOraxen = getServer().getPluginManager().getPlugin("Oraxen") != null;
 
 
        CoreAbility.registerPluginAbilities(this, "me.kaketuz.hackathon.abilities");
@@ -72,6 +70,34 @@ public final class Hackathon extends JavaPlugin {
         config.addDefault("Plant.PlantArmor.General.MaxDurability", 2000);
         config.addDefault("Plant.PlantArmor.General.CooldownMessage", "<! Cooldown !>");
         config.addDefault("Plant.PlantArmor.General.NotEnoughDurabilityMessage", "<! Not enough durability !>");
+        config.addDefault("Plant.PlantArmor.General.Cooldown", 10000);
+        config.addDefault("Plant.PlantArmor.General.Description", """
+                This ability allows you to collect armor from plants and use it in battles or for movement.\s
+                Ability descriptions:
+                
+                VineWhip: Create a vine that, when swung with enough force, will deal damage and push back the enemy.
+                SharpLeaves: Throw sharp leaves to deal quick and heavy damage
+                TenaciousVine: Throw a tenacious vine that will hinder the enemy's movement, or use it as a trap to immobilize the enemy upon contact
+                VineGrapple: Throw a long vine that you can ride or crawl on
+                Leap: Make a short but fast jump or charge the ability for a long jump
+                PlantShield: Create a shield of plants for protection and throw it at your opponent to deal damage and close yourself in a dome of leaves
+                LeafDome: Close yourself in leaves and explode them to deal damage
+                RegeneratingAssembly: Regenerates armor
+                WithdrawalPlants: Remove plants and end the ability
+                """);
+        config.addDefault("Plant.PlantArmor.General.Instructions", """
+                Sneak up to the plants. After that, all the plants around you will move closer to you and form an armor. The armor will give you speed, jumping, and immunity from fall damage.
+                
+                VineWhip: click and move the camera to swing. If the swing is strong enough, the vine will deal damage.
+                SharpLeaves: click in turn
+                TenaciousVine: click. The vine will fly, and if it is completely on the ground, it will disappear. if it hits an entity, it will immobilize it. If the vine hangs on blocks, it will also be able to immobilize entities, but it will disappear after a while
+                VineGrapple: Click and control the vine for accuracy. Once the vine reaches a block, you will immediately start rolling on it. Press shift on the ability slot to climb the vine, or press shift on another slot to cancel the ability
+                Leap: click for a short jump or hold shift for a charged jump
+                PlantShield: hold shift, after forming the shield you can click if the shield reaches the entity but it will deal damage and will close in the dome.
+                LeafDome: Hold shift to form a dome. After that, you can click to explode the dome. The dome segments only deal damage when they land on the ground
+                RegeneratingAssembly: Hold shift
+                WithdrawalPlants: Click
+                """);
 
         config.addDefault("Plant.PlantArmor.PlantWhip.Damage", 2);
         config.addDefault("Plant.PlantArmor.PlantWhip.MinimalSlapPower", 1.5);
@@ -81,22 +107,22 @@ public final class Hackathon extends JavaPlugin {
         config.addDefault("Plant.PlantArmor.PlantWhip.CollisionRadius", 1);
         config.addDefault("Plant.PlantArmor.PlantWhip.RangeInt", 14);
         config.addDefault("Plant.PlantArmor.PlantWhip.GrowInterval", 100);
-        config.addDefault("Plant.PlantArmor.PlantWhip.WhipDuration", 6000);
-        config.addDefault("Plant.PlantArmor.PlantWhip.WhipCooldown", 2000);
+        config.addDefault("Plant.PlantArmor.PlantWhip.WhipDuration", 10000);
+        config.addDefault("Plant.PlantArmor.PlantWhip.WhipCooldown", 4000);
 
-        config.addDefault("Plant.PlantArmor.SharpLeaf.Speed", 1.5);
-        config.addDefault("Plant.PlantArmor.SharpLeaf.Damage", 0.5);
-        config.addDefault("Plant.PlantArmor.SharpLeaf.Range", 20);
-        config.addDefault("Plant.PlantArmor.SharpLeaf.AngleDirection", 0.07);
-        config.addDefault("Plant.PlantArmor.SharpLeaf.CollisionRadius", 0.5);
-        config.addDefault("Plant.PlantArmor.SharpLeaf.Amount", 7);
-        config.addDefault("Plant.PlantArmor.SharpLeaf.DurabilityTakeCount", 400);
-        config.addDefault("Plant.PlantArmor.SharpLeaf.Cooldown", 8000);
-        config.addDefault("Plant.PlantArmor.SharpLeaf.Message", "- Leafs left: {amount} -");
+        config.addDefault("Plant.PlantArmor.SharpLeaves.Speed", 1.5);
+        config.addDefault("Plant.PlantArmor.SharpLeaves.Damage", 0.5);
+        config.addDefault("Plant.PlantArmor.SharpLeaves.Range", 20);
+        config.addDefault("Plant.PlantArmor.SharpLeaves.AngleDirection", 0.07);
+        config.addDefault("Plant.PlantArmor.SharpLeaves.CollisionRadius", 0.5);
+        config.addDefault("Plant.PlantArmor.SharpLeaves.Amount", 7);
+        config.addDefault("Plant.PlantArmor.SharpLeaves.DurabilityTakeCount", 400);
+        config.addDefault("Plant.PlantArmor.SharpLeaves.Cooldown", 8000);
+        config.addDefault("Plant.PlantArmor.SharpLeaves.Message", "- Leafs left: {amount} -");
 
         config.addDefault("Plant.PlantArmor.TenaciousVine.Cooldown", 6000);
         config.addDefault("Plant.PlantArmor.TenaciousVine.ThrowPower", 2.5);
-        config.addDefault("Plant.PlantArmor.TenaciousVine.VineSizeInt", 6);
+        config.addDefault("Plant.PlantArmor.TenaciousVine.VineSizeInt", 12);
         config.addDefault("Plant.PlantArmor.TenaciousVine.StunDuration", 2000);
         config.addDefault("Plant.PlantArmor.TenaciousVine.DurabilityTakeCount", 200);
         config.addDefault("Plant.PlantArmor.TenaciousVine.Message", "* Entangled in Vines *");
@@ -108,9 +134,10 @@ public final class Hackathon extends JavaPlugin {
         config.addDefault("Plant.PlantArmor.VineGrapple.DurabilityTakeCount", 300);
         config.addDefault("Plant.PlantArmor.VineGrapple.Cooldown", 2000);
         config.addDefault("Plant.PlantArmor.VineGrapple.DurationIfMissed", 3000);
+        config.addDefault("Plant.PlantArmor.VineGrapple.DashPower", 2);
 
-        config.addDefault("Plant.PlantArmor.Leap.PowerUpFactor", 0.5);
-        config.addDefault("Plant.PlantArmor.Leap.MinimalPower", 1);
+        config.addDefault("Plant.PlantArmor.Leap.PowerUpFactor", 1);
+        config.addDefault("Plant.PlantArmor.Leap.MinimalPower", 2);
         config.addDefault("Plant.PlantArmor.Leap.MaxStages", 5);
         config.addDefault("Plant.PlantArmor.Leap.Cooldown", 7000);
         config.addDefault("Plant.PlantArmor.Leap.LevelUpInterval", 1000);
@@ -190,7 +217,7 @@ public final class Hackathon extends JavaPlugin {
         DEFAULT_VALUES.put(Material.RED_MUSHROOM, 25);
         DEFAULT_VALUES.put(Material.CRIMSON_FUNGUS, 25);
         DEFAULT_VALUES.put(Material.WARPED_FUNGUS, 25);
-        DEFAULT_VALUES.put(Material.SHORT_GRASS, 50);
+        DEFAULT_VALUES.put(GeneralMethods.getMCVersion() >= 1205 ? Material.SHORT_GRASS : Material.valueOf("GRASS"), 50);
         DEFAULT_VALUES.put(Material.TALL_GRASS, 60);
         DEFAULT_VALUES.put(Material.FERN, 50);
         if (GeneralMethods.getMCVersion() >= 1215) DEFAULT_VALUES.put(Material.BUSH, 50);

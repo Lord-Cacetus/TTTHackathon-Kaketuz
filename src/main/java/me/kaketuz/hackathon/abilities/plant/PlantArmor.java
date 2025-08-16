@@ -4,14 +4,10 @@ import com.projectkorra.projectkorra.Element;
 import com.projectkorra.projectkorra.GeneralMethods;
 import com.projectkorra.projectkorra.ability.*;
 import com.projectkorra.projectkorra.ability.util.MultiAbilityManager;
-import com.projectkorra.projectkorra.board.BendingBoard;
-import com.projectkorra.projectkorra.board.BendingBoardManager;
-import com.projectkorra.projectkorra.region.RegionProtection;
 import com.projectkorra.projectkorra.util.ActionBar;
 import com.projectkorra.projectkorra.util.DamageHandler;
 import com.projectkorra.projectkorra.util.MovementHandler;
 import com.projectkorra.projectkorra.util.TempBlock;
-import jdk.jshell.execution.LocalExecutionControl;
 import me.kaketuz.hackathon.Hackathon;
 import me.kaketuz.hackathon.util.GradientAPI;
 import me.kaketuz.hackathon.util.HackathonMethods;
@@ -26,7 +22,6 @@ import org.bukkit.block.Biome;
 import org.bukkit.block.Block;
 import org.bukkit.block.BlockFace;
 import org.bukkit.block.data.*;
-import org.bukkit.block.data.Ageable;
 import org.bukkit.block.data.type.*;
 import org.bukkit.boss.BarColor;
 import org.bukkit.boss.BarStyle;
@@ -38,17 +33,16 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.LeatherArmorMeta;
+import org.bukkit.inventory.meta.ShieldMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
 import org.bukkit.scheduler.BukkitRunnable;
-import org.bukkit.scoreboard.Scoreboard;
 import org.bukkit.util.RayTraceResult;
 import org.bukkit.util.Transformation;
 import org.bukkit.util.Vector;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
-import org.joml.Vector2dc;
 import org.joml.Vector3f;
 
 import javax.annotation.Nullable;
@@ -56,7 +50,6 @@ import java.lang.reflect.Field;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
-import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbility {
@@ -65,23 +58,35 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
      //                        ------------- PlantArmor --------------
      //                                    - Code Guide -
-     //           MovingBlockTask - 442 line
-     //
-     //
+     //           VineWhipTask - 804 line
+     //           SharpLeavesTask - 1363 line
+     //           Leaf - 1287 line
+     //           TenaciousVineTask - 1216 line
+     //           VineGrappleTask - 881 line
+     //           LeapTask - 1106 line
+     //           PlantShieldTask - 1405 line
+     //           LeafDomeTask - 1482 line
+     //           MovingBlockTask - 726 line
+     //           LandTask - 993 line
+     //           Vine - 525 line
+     //           TextDisplayTask - 1618 line
+     //           All Methods - 1669 line
      //
     
     //General
     private final Map<String, Pair<Long, Long>> COOLDOWNS = new HashMap<>();
     private final Set<LocalTask> TASKS = ConcurrentHashMap.newKeySet();
+    private final Set<TempBlock> ALL_TEMP_BLOCKS = new HashSet<>();
     private boolean isForming, isFormed;
     private BossBar durabilityBar;
     private int maxDurability, currentDurability;
     private ItemStack[] OLD_ARMOR;
     private String durabilityTitle;
     private int jumpBoost, speedBoost, dolphinGraceBoost;
-    private static final NamespacedKey ARMOR_UNIQUE_KEY = new NamespacedKey(Hackathon.plugin, "ability.plantarmor.armorkey");
+    public static final NamespacedKey ARMOR_UNIQUE_KEY = new NamespacedKey(Hackathon.plugin, "ability.plantarmor.armorkey");
     private BlockData mostCommonBlock;
     private final ThreadLocalRandom RANDOM = ThreadLocalRandom.current();
+    private long cooldown;
 
     //Ill add more soon
     private static final Map<Biome, BlockData[][]> VINE_SKINS = new HashMap<>() {{
@@ -221,6 +226,17 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
     }} : new HashMap<>();
 
 
+    private final Map<String, Class<? extends LocalTask>> TASKS_BY_NAME = new HashMap<>() {{
+        put("VineWhip", VineWhipTask.class);
+        put("SharpLeaves", SharpLeafsTask.class);
+        put("TenaciousVine", TenaciousVinesTask.class);
+        put("VineGrapple", VineGrappleTask.class);
+        put("Leap", LeapTask.class);
+        put("PlantShield", PlantShieldTask.class);
+        put("LeafDome", DomeTask.class);
+    }};
+
+
 
     private boolean isRegenerating;
 
@@ -254,7 +270,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
     //VineGrabble
     private int grappleRange, grappleGrowInterval, grappleDurabilityTakeCount;
     private long grappleCooldown, grappleDurationIfMissed;
-    private double grappleAnglePower, grapplePullSpeed;
+    private double grappleAnglePower, grapplePullSpeed, grappleDash;
 
     //Leap
     private int leapMaxStages, leapDurabilityTakeCount;
@@ -293,6 +309,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         speedBoost = Hackathon.config.getInt("Plant.PlantArmor.General.SpeedBoost");
         dolphinGraceBoost = Hackathon.config.getInt("Plant.PlantArmor.General.DolphinGraceBoost");
         maxDurability = Hackathon.config.getInt("Plant.PlantArmor.General.MaxDurability");
+        cooldown = Hackathon.config.getLong("Plant.PlantArmor.General.Cooldown");
 
         whipDamage = Hackathon.config.getDouble("Plant.PlantArmor.PlantWhip.Damage");
         whipMinSlapPower = Hackathon.config.getDouble("Plant.PlantArmor.PlantWhip.MinimalSlapPower");
@@ -305,15 +322,15 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         whipDuration = Hackathon.config.getLong("Plant.PlantArmor.PlantWhip.WhipDuration");
         whipCooldown = Hackathon.config.getLong("Plant.PlantArmor.PlantWhip.WhipCooldown");
 
-        leafsSpeed = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaf.Speed");
-        leafsDamage = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaf.Damage");
-        leafsRange = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaf.Range");
-        leafsAngleDirection = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaf.AngleDirection");
-        leafsCollisionRadius = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaf.CollisionRadius");
-        leafsAmount = Hackathon.config.getInt("Plant.PlantArmor.SharpLeaf.Amount");
-        leafsDurabilityTakeCount = Hackathon.config.getInt("Plant.PlantArmor.SharpLeaf.DurabilityTakeCount");
-        leafsCooldown = Hackathon.config.getLong("Plant.PlantArmor.SharpLeaf.Cooldown");
-        leafLeftAmountMessage = Hackathon.config.getString("Plant.PlantArmor.SharpLeaf.Message");
+        leafsSpeed = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaves.Speed");
+        leafsDamage = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaves.Damage");
+        leafsRange = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaves.Range");
+        leafsAngleDirection = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaves.AngleDirection");
+        leafsCollisionRadius = Hackathon.config.getDouble("Plant.PlantArmor.SharpLeaves.CollisionRadius");
+        leafsAmount = Hackathon.config.getInt("Plant.PlantArmor.SharpLeaves.Amount");
+        leafsDurabilityTakeCount = Hackathon.config.getInt("Plant.PlantArmor.SharpLeaves.DurabilityTakeCount");
+        leafsCooldown = Hackathon.config.getLong("Plant.PlantArmor.SharpLeaves.Cooldown");
+        leafLeftAmountMessage = Hackathon.config.getString("Plant.PlantArmor.SharpLeaves.Message");
 
         tenaciousVineCooldown = Hackathon.config.getLong("Plant.PlantArmor.TenaciousVine.Cooldown");
         tenaciousVinePower = Hackathon.config.getDouble("Plant.PlantArmor.TenaciousVine.ThrowPower");
@@ -324,6 +341,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
         grapplePullSpeed = Hackathon.config.getDouble("Plant.PlantArmor.VineGrapple.PullSpeed");
         grappleAnglePower = Hackathon.config.getDouble("Plant.PlantArmor.VineGrapple.AnglePower");
+        grappleDash = Hackathon.config.getDouble("Plant.PlantArmor.VineGrapple.DashPower");
         grappleRange = Hackathon.config.getInt("Plant.PlantArmor.VineGrapple.RangeInt");
         grappleGrowInterval = Hackathon.config.getInt("Plant.PlantArmor.VineGrapple.GrowInterval");
         grappleDurabilityTakeCount = Hackathon.config.getInt("Plant.PlantArmor.VineGrapple.DurabilityTakeCount");
@@ -366,69 +384,9 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         start();
     }
 
-    @Override
-    public void remove() {
-        super.remove();
-        durabilityBar.removeAll();
-        MultiAbilityManager.unbindMultiAbility(player);
-        TASKS.forEach(LocalTask::remove);
-        AFFECTED_BLOCKS.forEach(TempBlock::revertBlock);
-        if (isFormed) {
-            player.getInventory().setHelmet(OLD_ARMOR[0]);
-            player.getInventory().setChestplate(OLD_ARMOR[1]);
-            player.getInventory().setLeggings(OLD_ARMOR[2]);
-            player.getInventory().setBoots(OLD_ARMOR[3]);
-            player.removePotionEffect(PotionEffectType.SPEED);
-            player.removePotionEffect(PotionEffectType.DOLPHINS_GRACE);
-            player.removePotionEffect(GeneralMethods.getMCVersion() >= 1205 ? PotionEffectType.JUMP_BOOST : PotionEffectType.getByName("JUMP"));
-        }
-    }
-
-    public void updateActionBarMessages() {
-
-        COOLDOWNS.keySet().removeIf(s -> !bPlayer.isOnCooldown(s));
-
-        getMultiAbilities().forEach(m -> {
-
-            if (ChatColor.stripColor(bPlayer.getBoundAbilityName()).equalsIgnoreCase(m.getName())) {
-               if (!bPlayer.isOnCooldown("PlantArmorActionMsg")) {
-                    if (bPlayer.isOnCooldown(m.getName())) {
-                        if (player.getInventory().getHeldItemSlot() == 1 && hasPlantArmorSubAbility(SharpLeafsTask.class)) {
-                            ActionBar.sendActionBar(getElement().getColor() + leafLeftAmountMessage.replace("{amount}", String.valueOf(leafsAmount - getPlantArmorSubAbility(SharpLeafsTask.class).orElseThrow().counter + 1)), player);
-                        }
-                        else {
-                            final Pair<Long, Long> cooldown = COOLDOWNS.get(m.getName());
-                            ActionBar.sendActionBar(ChatColor.RED + "❌ " + ChatColor.STRIKETHROUGH + m.getName() + ChatColor.RESET + ChatColor.RED + " - " + HackathonMethods.round((double) ((cooldown.getLeft() + cooldown.getRight()) - System.currentTimeMillis()) / 1000, 1) + "s", player);
-                        }
-                    }
-                    else {
-                        ActionBar.sendActionBar(ChatColor.GREEN + "✅ " + m.getAbilityColor() + m.getName(), player);
-                    }
-                }
-            }
-        });
-    }
 
 
 
-    public void updateBossbarDurabilityColor() {
-        if (durabilityBar.getProgress() <= 0.15) {
-            durabilityBar.setColor(BarColor.RED);
-        }
-        else if (durabilityBar.getProgress() <= 0.5) {
-            durabilityBar.setColor(BarColor.YELLOW);
-        } else {
-            durabilityBar.setColor(BarColor.GREEN);
-        }
-    }
-
-    private void buildTitle() {
-        durabilityBar.setProgress((double) currentDurability / maxDurability);
-        String finalTitle = durabilityTitle
-                .replace("{current}", String.valueOf(currentDurability))
-                .replace("{max}", String.valueOf(maxDurability));
-        durabilityBar.setTitle(GradientAPI.colorize("<#247A4E>" + finalTitle + "</#7CCF36>"));
-    }
 
     @Override
     public void progress() {
@@ -437,7 +395,12 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             remove();
         }
 
-        TASKS.forEach(LocalTask::update);
+        try {
+            TASKS.forEach(LocalTask::update);
+        } catch (Exception e) {
+            player.sendMessage(ChatColor.RED + e.getMessage());
+            remove();
+        }
 
         if (maxDurability < currentDurability) {
             TASKS.stream()
@@ -445,6 +408,10 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                     .map(lt -> ((MovingBlockTask)lt))
                     .forEach(MovingBlockTask::remove);
             if (isForming) {
+                if (!bPlayer.getBoundAbilityName().equals(getName()) || !bPlayer.canBendIgnoreBinds(this)) {
+                    bPlayer.addCooldown(this);
+                    remove();
+                }
                 form();
             }
             if (isRegenerating) isRegenerating = false;
@@ -471,105 +438,11 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         }
     }
 
-    private List<Block> cachedBlocks = new ArrayList<>();
-    private long lastCacheUpdate = 0;
 
-    private void updateCacheIfNeeded() {
-        if (System.currentTimeMillis() - lastCacheUpdate > 250) {
-            cachedBlocks.clear();
-            for (Block b : GeneralMethods.getBlocksAroundPoint(player.getEyeLocation(), collectRange)) {
-                if (!PLANT_VOLUMES.containsKey(b.getType())) continue;
-                if (TempBlock.isTempBlock(b)) continue;
-                cachedBlocks.add(b);
-            }
-            lastCacheUpdate = System.currentTimeMillis();
-        }
-    }
-
-    public void form() {
-        OLD_ARMOR = new ItemStack[] {
-                player.getInventory().getHelmet(),
-                player.getInventory().getChestplate(),
-                player.getInventory().getLeggings(),
-                player.getInventory().getBoots()
-        };
-
-
-        Color finalColor = HackathonMethods.averageColor(COLLECTED_COLORS);
-        Material helmetType = AFFECTED_MATERIALS_LEADERBOARD.entrySet().stream()
-                .max(Map.Entry.comparingByValue())
-                .map(Map.Entry::getKey)
-                .orElse(ThreadLocalRandom.current().nextBoolean() ? Material.AZALEA : Material.FLOWERING_AZALEA);
-        mostCommonBlock = helmetType.createBlockData();
-        ItemStack helmet = new ItemStack(!helmetType.isItem() ? (ThreadLocalRandom.current().nextBoolean() ? Material.AZALEA : Material.FLOWERING_AZALEA) : helmetType);
-        ItemStack chestplate = new ItemStack(Material.LEATHER_CHESTPLATE);
-        ItemStack leggings = new ItemStack(Material.LEATHER_LEGGINGS);
-        ItemStack boots = new ItemStack(Material.LEATHER_BOOTS);
-
-        setupArmor(chestplate, finalColor, "<#247A4E>- ᴅᴇᴄɪᴅᴜᴏᴜs ᴄʜᴇsᴛᴘʟᴀᴛᴇ -</#7CCF36>");
-        setupArmor(leggings, finalColor, "<#247A4E>- ʙʀᴏᴀᴅʟᴇᴀꜰ ʟᴇɢɢɪɴɢs -</#7CCF36>");
-        setupArmor(boots, finalColor, "<#247A4E>- ᴘʟᴀɴᴛ ʙᴏᴏᴛs -</#7CCF36>");
-
-        ItemMeta hMeta = helmet.getItemMeta();
-        assert hMeta != null;
-        hMeta.setUnbreakable(true);
-        hMeta.addEnchant(Enchantment.BINDING_CURSE, 1, true);
-        hMeta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES, ItemFlag.HIDE_ENCHANTS);
-        hMeta.setItemName(GradientAPI.colorize("<#247A4E>- ʜᴀɴɢɪɴɢ ᴍᴏss -</#7CCF36>"));
-        hMeta.setLore(List.of("", ChatColor.of("#247A4E") + " - Just a piece of moss that you put on your head for fun :/"));
-        hMeta.setEnchantmentGlintOverride(false);
-        hMeta.getPersistentDataContainer().set(ARMOR_UNIQUE_KEY, PersistentDataType.BYTE, (byte)1);
-        helmet.setItemMeta(hMeta);
-
-        player.getInventory().setHelmet(helmet);
-        player.getInventory().setChestplate(chestplate);
-        player.getInventory().setLeggings(leggings);
-        player.getInventory().setBoots(boots);
-
-        MultiAbilityManager.bindMultiAbility(player, getName());
-        isRegenerating = false;
-        isForming = false;
-        isFormed = true;
-    }
-
-    private void setupArmor(ItemStack item, Color color, String name) {
-        LeatherArmorMeta meta = (LeatherArmorMeta) item.getItemMeta();
-        if (meta == null) return;
-
-        meta.setColor(color);
-        meta.setUnbreakable(true);
-        meta.addEnchant(Enchantment.BINDING_CURSE, 1, true);
-        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES, ItemFlag.HIDE_ENCHANTS);
-        meta.setItemName(GradientAPI.colorize(name));
-        meta.setEnchantmentGlintOverride(false);
-        meta.getPersistentDataContainer().set(ARMOR_UNIQUE_KEY, PersistentDataType.BYTE, (byte)1);
-
-        item.setItemMeta(meta);
-    }
-
-    public void regenerate() {
-        if (bPlayer.isOnCooldown("RegeneratingAssembly")) return;
-        if (System.currentTimeMillis() > getStartTime() + i) {
-            updateCacheIfNeeded();
-            if (!cachedBlocks.isEmpty()) {
-                Block chosen = cachedBlocks.get(ThreadLocalRandom.current().nextInt(cachedBlocks.size()));
-                new MovingBlockTask(chosen);
-            }
-            i += collectInterval;
-        }
-    }
-
-    public static boolean isPlantArmor(ItemStack stack) {
-        return Optional.ofNullable(stack)
-                .map(ItemStack::getItemMeta)
-                .map(ItemMeta::getPersistentDataContainer)
-                .filter(pdc -> pdc.has(ARMOR_UNIQUE_KEY))
-                .isPresent();
-    }
 
     @Override
     public boolean isSneakAbility() {
-        return false;
+        return true;
     }
 
     @Override
@@ -579,7 +452,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
     @Override
     public long getCooldown() {
-        return 0;
+        return cooldown;
     }
 
     @Override
@@ -603,6 +476,37 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
     }
 
     @Override
+    public void remove() {
+        super.remove();
+        bPlayer.addCooldown(this);
+        durabilityBar.removeAll();
+        MultiAbilityManager.unbindMultiAbility(player);
+        while (!TASKS.isEmpty()) new HashSet<>(TASKS).stream()
+                .filter(lt -> !(lt instanceof LandTask))
+                .forEach(LocalTask::remove);
+        AFFECTED_BLOCKS.forEach(TempBlock::revertBlock);
+        if (isFormed) {
+            player.getInventory().setHelmet(OLD_ARMOR[0]);
+            player.getInventory().setChestplate(OLD_ARMOR[1]);
+            player.getInventory().setLeggings(OLD_ARMOR[2]);
+            player.getInventory().setBoots(OLD_ARMOR[3]);
+            player.removePotionEffect(PotionEffectType.SPEED);
+            player.removePotionEffect(PotionEffectType.DOLPHINS_GRACE);
+            player.removePotionEffect(GeneralMethods.getMCVersion() >= 1205 ? PotionEffectType.JUMP_BOOST : Objects.requireNonNull(PotionEffectType.getByName("JUMP")));
+        }
+    }
+
+    @Override
+    public String getDescription() {
+        return Hackathon.config.getString("Plant.PlantArmor.General.Description");
+    }
+
+    @Override
+    public String getInstructions() {
+        return Hackathon.config.getString("Plant.PlantArmor.General.Instructions");
+    }
+
+    @Override
     public String getAuthor() {
         return GradientAPI.colorize("<#247A4E>Lᴏʀᴅ_Cᴀᴄᴇᴛᴜs_ & Sɪᴍᴘʟɪᴄɪᴛᴇᴇ</#7CCF36>");
     }
@@ -616,7 +520,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
     public ArrayList<MultiAbilityManager.MultiAbilityInfoSub> getMultiAbilities() {
         return new ArrayList<>(Arrays.asList(
                 new MultiAbilityManager.MultiAbilityInfoSub("VineWhip", Element.PLANT),
-                new MultiAbilityManager.MultiAbilityInfoSub("SharpLeafs", Element.PLANT),
+                new MultiAbilityManager.MultiAbilityInfoSub("SharpLeaves", Element.PLANT),
                 new MultiAbilityManager.MultiAbilityInfoSub("TenaciousVines", Element.PLANT),
                 new MultiAbilityManager.MultiAbilityInfoSub("VineGrapple", Element.PLANT),
                 new MultiAbilityManager.MultiAbilityInfoSub("Leap", Element.PLANT),
@@ -626,112 +530,235 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                 new MultiAbilityManager.MultiAbilityInfoSub("WithdrawalPlants", Element.PLANT)
         ));
     }
-    
 
-    public interface LocalTask {
-        void update();
-        void remove();
-         default boolean isRemoved() {
-             try {
-                 Field listField = PlantArmor.class.getDeclaredField("TASKS");
-                 listField.setAccessible(true);
-                 @SuppressWarnings("unchecked")
-                 List<LocalTask> list = (List<LocalTask>) listField.get(this);
-                 return !list.contains(this);
-             } catch (Exception e) {
-                 Logger.sendError(e.getMessage());
-                 remove();
-             }
-             return true;
-         }
-    }
 
-    public boolean isFormed() {
-        return isFormed;
-    }
 
-    public boolean isForming() {
-        return isForming;
-    }
+    public static class Vine extends BukkitRunnable {
+        private final VerletRope rope;
+        private final List<BlockDisplay> displays = new ArrayList<>();
+        private final long start;
+        private BlockData currentSkin;
+        private final Location startLoc, end;
+        private final Biome originBiome;
+        private Integer selectedSkin;
 
-    public void setInteraction(int slot, InteractionType type) {
-        switch (slot) {
-            case 0 -> {
-               if (type == InteractionType.LEFT_CLICK) new VineWhipTask();
-            }
-            case 1 -> {
-                if (type == InteractionType.LEFT_CLICK) {
-                    if (!hasPlantArmorSubAbility(SharpLeafsTask.class)) new SharpLeafsTask();
-                    else {
-                        getPlantArmorSubAbility(SharpLeafsTask.class).orElseThrow().launch();
+        public Vine(Location start, Location end, int segments, @Nullable Ability ability) {
+            startLoc = start;
+            this.end = end;
+            this.rope = new VerletRope(start, end, segments, 1);
+            this.rope.setCollisionEnabled(true);
+            this.rope.setGravity(new Vector().zero());
+            this.start = System.currentTimeMillis();
+
+            Biome biome = start.getBlock().getBiome();
+
+            if (ability instanceof PlantArmor armor) {
+                List<Material> materials = null;
+                for (List<Material> key : BIOME_CONTENTS.keySet()) {
+                    if (key.contains(armor.mostCommonBlock.getMaterial())) {
+                        materials = key;
+                        break;
+                    }
+                }
+
+                if (materials != null) {
+                    List<Biome> biomes = BIOME_CONTENTS.get(materials);
+                    if (biomes != null && !biomes.isEmpty()) {
+                        biome = (biomes.size() == 1)
+                                ? biomes.getFirst()
+                                : biomes.get(ThreadLocalRandom.current().nextInt(biomes.size()));
                     }
                 }
             }
-            case 2 -> {
-                if (type == InteractionType.LEFT_CLICK) new TenaciousVinesTask();
-            }
-            case 3 -> {
-                if (type == InteractionType.LEFT_CLICK) new VineGrappleTask();
-            }
-            case 4 -> {
-                if (type == InteractionType.LEFT_CLICK || type == InteractionType.SNEAK_DOWN) new LeapTask(type);
-            }
-            case 5 -> {
-                if (type == InteractionType.SNEAK_DOWN) new PlantShieldTask();
-                else if (type == InteractionType.LEFT_CLICK && hasPlantArmorSubAbility(PlantShieldTask.class)) getPlantArmorSubAbility(PlantShieldTask.class).orElseThrow().launch();
-            }
-            case 6 -> {
-                if (type == InteractionType.SNEAK_DOWN) new DomeTask();
-                else if (type == InteractionType.LEFT_CLICK && hasPlantArmorSubAbility(DomeTask.class)) getPlantArmorSubAbility(DomeTask.class).orElseThrow().explode();
-            }
-            case 7 -> {
-                if (type == InteractionType.SNEAK_DOWN) isRegenerating = true;
-                else if (type == InteractionType.SNEAK_UP && !bPlayer.isOnCooldown("RegeneratingAssembly")) {
-                    isRegenerating = false;
-                    bPlayer.addCooldown("RegeneratingAssembly", regenCooldown);
+
+
+            currentSkin = getSkinByStandingBiome(biome);
+            originBiome = biome;
+
+            runTaskTimer(Hackathon.plugin, 1L, 0);
+        }
+
+
+        private BlockData getSkinByStandingBiome(Biome biome) {
+            BlockData[][] skins = VINE_SKINS.get(biome);
+
+            if (skins != null && skins.length > 0) {
+                int outerIndex;
+
+                if (selectedSkin == null) {
+                    outerIndex = (skins.length == 1) ? 0
+                            : ThreadLocalRandom.current().nextInt(skins.length);
+                    selectedSkin = outerIndex;
                 }
-            }
-            case 8 -> {
-                if (type == InteractionType.LEFT_CLICK) remove();
+                else outerIndex = selectedSkin;
+
+                BlockData[] inner = skins[outerIndex];
+                if (inner.length == 0) {
+                    return Material.BIG_DRIPLEAF_STEM.createBlockData();
+                }
+
+                int innerIndex = (inner.length == 1) ? 0
+                        : ThreadLocalRandom.current().nextInt(inner.length);
+                return inner[innerIndex];
+            } else {
+                return Material.BIG_DRIPLEAF_STEM.createBlockData();
             }
         }
-    }
 
-    public enum InteractionType { LEFT_CLICK, RIGHT_CLICK, SNEAK_DOWN, SNEAK_UP }
 
-    public static void redirectEvent(InteractionType type, Player player) {
-        if (hasAbility(player, PlantArmor.class)) {
-            PlantArmor armor = getAbility(player, PlantArmor.class);
-            if (armor.isFormed()) {
-                armor.setInteraction(player.getInventory().getHeldItemSlot(), type);
+
+        @Override
+        public synchronized void cancel() throws IllegalStateException {
+            super.cancel();
+            for (int i = 0; i < rope.getRenderPoints().size() - 2; i++) {
+                if (rope.getPoints().get(i).isLocked()) continue;
+                Vector dir = GeneralMethods.getDirection(rope.getRenderPoints().get(i), rope.getRenderPoints().get(i + 1));
+                Location pLoc = rope.getRenderPoints().get(i).clone();
+
+                for (float k = 0; k <= dir.length(); k += 0.3f) {
+                    Objects.requireNonNull(pLoc.getWorld()).spawnParticle(GeneralMethods.getMCVersion() >= 1205 ? Particle.BLOCK : Particle.valueOf("BLOCK_CRACK"), pLoc, 2, 0.5, 0.5, 0.5, 0.1, displays.get(i).getBlock());
+                    pLoc.add(dir.clone().normalize().multiply(0.3));
+                }
+            }
+            displays.forEach(BlockDisplay::remove);
+        }
+
+        public VerletRope getRope() {
+            return rope;
+        }
+
+        public BlockData getCurrentSkin() {
+            return currentSkin;
+        }
+
+        public List<BlockDisplay> getDisplays() {
+            return displays;
+        }
+
+        public long getStart() {
+            return start;
+        }
+
+        public Location getStartLoc() {
+            return startLoc;
+        }
+
+        public Location getEnd() {
+            return end;
+        }
+
+        @Override
+        public void run() {
+            try {
+                rope.setConstraintIterations(10);
+                rope.simulate(0.016);
+                if (rope.getRenderPoints().size() > displays.size()) {
+                    for (int i = displays.size(); i < rope.getRenderPoints().size(); i++) {
+                        BlockDisplay display = (BlockDisplay) Objects.requireNonNull(rope.getRenderPoints().get(i).getWorld()).spawnEntity(rope.getRenderPoints().get(i), EntityType.BLOCK_DISPLAY);
+                        currentSkin = getSkinByStandingBiome(originBiome);
+                        display.setBlock(currentSkin);
+                        display.setPersistent(false);
+                        displays.add(display);
+                    }
+                }
+                List<Location> points = rope.getRenderPoints();
+                for (int i = 0; i < points.size(); i++) {
+                    Location loc = points.get(i).clone();
+
+                    Vector direction;
+                    if (i > 0 && i < points.size() - 1) {
+                        Vector before = GeneralMethods.getDirection(points.get(i - 1), points.get(i));
+                        Vector after = GeneralMethods.getDirection(points.get(i), points.get(i + 1));
+                        direction = before.add(after).normalize();
+                    } else if (i < points.size() - 1) {
+                        direction = GeneralMethods.getDirection(points.get(i), points.get(i + 1)).normalize();
+                    } else {
+                        direction = GeneralMethods.getDirection(points.get(i - 1), points.get(i)).normalize();
+                    }
+
+                    if (i < displays.size()) {
+
+                        final Vector3f dir3 = direction.toVector3f();
+                        if (dir3.lengthSquared() < 1e-6f) {
+                            dir3.set(0, 0, 1);
+                        } else {
+                            dir3.normalize();
+                        }
+                        final Vector3f worldUp = new Vector3f(0, 1, 0);
+                        if (Math.abs(dir3.dot(worldUp)) > 0.999f) {
+                            worldUp.set(1, 0, 0);
+                        }
+                        final Quaternionf lookRot = new Quaternionf().rotationTo(new Vector3f(0, 0, 1), dir3);
+                        final Vector3f localX = new Vector3f(1, 0, 0);
+                        lookRot.transform(localX).normalize();
+
+                        final Quaternionf pitchRot = new Quaternionf().fromAxisAngleRad(localX, (float) Math.toRadians(-90));
+                        final Quaternionf combined = new Quaternionf(pitchRot).mul(lookRot);
+
+                        final Location currentPoint = rope.getRenderPoints().get(i);
+                        final Location next = rope.getRenderPoints().get(i == rope.getRenderPoints().size() - 1 ? i : i + 1);
+
+                        final double distance = currentPoint.distance(next);
+                        final float size = distance == 0 ? 1 : (float) distance;
+
+                        final Matrix4f mat = new Matrix4f()
+                                .identity()
+                                .translate(0.5f, 0.5f, 0.5f)
+                                .rotate(combined)
+                                .scale(1.0f, size > 2 ? 2 : size, 1.0f)
+                                .translate(-0.5f, -0.5f, -0.5f);
+
+                        BlockDisplay disp = displays.get(i);
+                        disp.setTransformationMatrix(mat);
+                        disp.setTeleportDuration(2);
+                        disp.teleport(loc);
+                    }
+
+                    BlockDisplay display = displays.get(i);
+                    BlockData dat = display.getBlock();
+
+                    if (dat instanceof CaveVinesPlant cvp) {
+                        if (cvp.isBerries() && isAir(display.getLocation().getBlock().getType())) {
+                            new TempBlock(display.getLocation().getBlock(),
+                                    Material.LIGHT.createBlockData(d -> ((Levelled) d).setLevel(13)))
+                                    .setRevertTime(10);
+                        }
+                    }
+
+
+                }
+            } catch (Exception e) {
+                Logger.sendError(e.getMessage());
+                cancel();
             }
         }
     }
 
     private class MovingBlockTask implements LocalTask {
 
-        private BlockDisplay display;
-        private Block block;
+        private final BlockDisplay display;
         private BlockData unmodifiableData;
 
         public int carryingVolume;
 
 
         public MovingBlockTask(Block block) {
-            this.block = block;
 
-                display = (BlockDisplay) this.block.getWorld().spawnEntity(this.block.getLocation(), EntityType.BLOCK_DISPLAY);
+            display = (BlockDisplay) block.getWorld().spawnEntity(block.getLocation(), EntityType.BLOCK_DISPLAY);
                 display.setPersistent(false);
-                display.setBlock(this.block.getBlockData());
+                display.setBlock(block.getBlockData());
                 display.setTransformation(new Transformation(
                         new Vector3f(0.5f, 0.5f, 0.5f),
                         new Quaternionf(),
                         new Vector3f(1, 1, 1),
                         new Quaternionf()
                 ));
+            int blockLight = display.getWorld().getBlockAt(display.getLocation().add(0, 1, 0)).getLightFromBlocks();
+            int skyLight = display.getWorld().getBlockAt(display.getLocation().add(0, 1, 0)).getLightFromSky();
+            display.setBrightness(new Display.Brightness(blockLight, skyLight));
                 player.getWorld().spawnParticle(GeneralMethods.getMCVersion() > 1205 ? Particle.BLOCK : Particle.valueOf("BLOCK_CRACK"), block.getLocation().add(0.5, 0.5, 0.5), 10, 0.5, 0.5, 0.5, 0, display.getBlock());
                 if (!PLANT_VOLUMES.containsKey(block.getType())) return;
-                else carryingVolume = PLANT_VOLUMES.get(this.block.getType());
+                else carryingVolume = PLANT_VOLUMES.get(block.getType());
                 unmodifiableData = block.getBlockData();
                 if (AFFECTED_MATERIALS_LEADERBOARD.containsKey(block.getType())) {
                     final int newInt = AFFECTED_MATERIALS_LEADERBOARD.get(block.getType());
@@ -749,9 +776,9 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             Location target = display.getLocation();
             target.setPitch(target.getPitch() + 0.5f);
             target.setYaw(target.getYaw() + 2);
-            display.teleport(target.add(GeneralMethods.getDirection(display.getLocation(), player.getEyeLocation()).normalize().multiply(collectSpeed)));
-            if (player.getEyeLocation().distance(target) < 0.5) {
-                COLLECTED_COLORS.add(unmodifiableData.getMapColor());
+            display.teleport(target.add(GeneralMethods.getDirection(display.getLocation(), player.getLocation()).normalize().multiply(collectSpeed)));
+            if (player.getLocation().distance(target) < 1) {
+                COLLECTED_COLORS.add(GeneralMethods.getMCVersion() <= 1202 ? Color.GREEN : unmodifiableData.getMapColor());
                 currentDurability += carryingVolume;
                 if (isFormed) {
                     final PlayerInventory inventory = player.getInventory();
@@ -759,15 +786,15 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                     if (meta != null) {
                         meta.setColor(HackathonMethods.averageColor(COLLECTED_COLORS));
                         inventory.getChestplate().setItemMeta(meta);
-                        inventory.getLeggings().setItemMeta(meta);
-                        inventory.getBoots().setItemMeta(meta);
+                        Objects.requireNonNull(inventory.getLeggings()).setItemMeta(meta);
+                        Objects.requireNonNull(inventory.getBoots()).setItemMeta(meta);
                     }
                     Material helmetType = AFFECTED_MATERIALS_LEADERBOARD.entrySet().stream()
                             .max(Map.Entry.comparingByValue())
                             .map(Map.Entry::getKey)
                             .orElse(ThreadLocalRandom.current().nextBoolean() ? Material.AZALEA : Material.FLOWERING_AZALEA);
                     mostCommonBlock = helmetType.createBlockData();
-                    inventory.getHelmet().setType(mostCommonBlock.getMaterial());
+                    Objects.requireNonNull(inventory.getHelmet()).setType(mostCommonBlock.getMaterial());
                 }
                 remove();
             }
@@ -813,7 +840,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         public void update() {
 
 
-            vine.getRope().setStartPosition(GeneralMethods.getRightSide(player.getLocation().add(0, 1, 0), 0.4));
+            vine.getRope().setStartPosition(GeneralMethods.getRightSide(player.getLocation(), 0.4));
             vine.getRope().applyVelocity(player.getLocation().getDirection().multiply(whipAnglePower));
 
             if (vine.getRope().getRenderPoints().size() < whipRange) {
@@ -887,7 +914,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                     .findAny()
                     .ifPresent(t -> {
                         t.remove();
-                        player.setVelocity(player.getLocation().getDirection().multiply(2));
+                        player.setVelocity(player.getLocation().getDirection().multiply(grappleDash));
                     });
             vine = new Vine(GeneralMethods.getRightSide(player.getLocation().add(0, 1, 0), 0.4), GeneralMethods.getTargetedLocation(player, 3), 2, PlantArmor.this);
             i = grappleGrowInterval;
@@ -903,6 +930,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                 bPlayer.addCooldown("VineGrapple", grappleCooldown);
                 if (vine.getRope().getRenderPoints().size() < grappleRange && System.currentTimeMillis() > start + i) {
                     vine.getRope().addSegment();
+                    vine.getRope().getPoints().getLast().applyVelocity(player.getLocation().getDirection().multiply(grappleAnglePower * 2));
                     player.getWorld().playSound(vine.getRope().getRenderPoints().getLast(), Sound.BLOCK_BIG_DRIPLEAF_TILT_DOWN, 1, 1);
                     player.getWorld().spawnParticle(Particle.COMPOSTER, vine.getRope().getRenderPoints().getLast(), 4, 0.5, 0.5, 0.5, 0);
                     i += grappleGrowInterval;
@@ -917,9 +945,9 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                     return;
                 }
 
-                vine.getRope().setStartPosition(GeneralMethods.getRightSide(player.getLocation().add(0, 1, 0), 0.4));
+                vine.getRope().setStartPosition(GeneralMethods.getRightSide(player.getLocation(), 0.4));
 
-                RayTraceResult result = vine.getRope().getRenderPoints().getLast().getWorld().rayTraceBlocks(
+                RayTraceResult result = Objects.requireNonNull(vine.getRope().getRenderPoints().getLast().getWorld()).rayTraceBlocks(
                         vine.getRope().getRenderPoints().getLast(),
                         player.getLocation().getDirection(), 1, FluidCollisionMode.NEVER, true);
 
@@ -939,8 +967,11 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                 vine.getRope().normalizeRope(false);
                 vine.getRope().applyVelocity(player.getLocation().getDirection().multiply(grappleAnglePower));
             } else {
+
+
                 if (player.isSneaking() && player.getInventory().getHeldItemSlot() == 3) {
-                    if (vine.getRope().getRenderPoints().getFirst().distance(player.getLocation()) <= 0.5) {
+
+                    if (vine.getRope().getRenderPoints().getFirst().distance(player.getLocation()) <= 1) {
                         vine.getRope().removeSegmentFirst();
                         vine.getDisplays().getFirst().remove();
                         if (vine.getRope().getRenderPoints().size() <= 2) remove();
@@ -952,8 +983,9 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                 } else if (player.isSneaking()) {
                     remove();
                 } else {
-                    final Location right = GeneralMethods.getRightSide(player.getLocation().add(0, 1, 0), 0.4);
-                    player.setVelocity(GeneralMethods.getDirection(right, vine.getRope().getRenderPoints().getFirst()).normalize().multiply(right.distance(vine.getRope().getRenderPoints().getFirst()) / 2));
+                        final Location right = GeneralMethods.getRightSide(player.getLocation().add(0, 1, 0), 0.4);
+                        player.setVelocity(GeneralMethods.getDirection(right, vine.getRope().getRenderPoints().getFirst()).normalize().multiply(right.distance(vine.getRope().getRenderPoints().getFirst()) / 2));
+
                 }
             }
         }
@@ -966,230 +998,18 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         }
     }
 
-    public static class Vine extends BukkitRunnable {
-        private VerletRope rope;
-        private List<BlockDisplay> displays = new ArrayList<>();
-        private long start;
-        private BlockData currentSkin;
-        private Location startLoc, end;
-        private Ability ability;
-        private Biome originBiome;
-        private Integer selectedSkin;
-
-        public Vine(Location start, Location end, int segments, @Nullable Ability ability) {
-            startLoc = start;
-            this.ability = ability;
-            this.end = end;
-            this.rope = new VerletRope(start, end, segments, 1);
-            this.rope.setCollisionEnabled(true);
-            this.rope.setGravity(new Vector().zero());
-            this.start = System.currentTimeMillis();
-
-            Biome biome = start.getBlock().getBiome();
-
-            if (ability instanceof PlantArmor armor) {
-                List<Material> materials = null;
-                for (List<Material> key : BIOME_CONTENTS.keySet()) {
-                    if (key.contains(armor.mostCommonBlock.getMaterial())) {
-                        materials = key;
-                        break;
-                    }
-                }
-
-                if (materials != null) {
-                    List<Biome> biomes = BIOME_CONTENTS.get(materials);
-                    if (biomes != null && !biomes.isEmpty()) {
-                        biome = (biomes.size() == 1)
-                                ? biomes.getFirst()
-                                : biomes.get(ThreadLocalRandom.current().nextInt(biomes.size()));
-                    }
-                }
-            }
 
 
-            currentSkin = getSkinByStandingBiome(biome);
-            originBiome = biome;
-
-            runTaskTimer(Hackathon.plugin, 1L, 0);
-        }
-
-
-        private BlockData getSkinByStandingBiome(Biome biome) {
-            BlockData[][] skins = VINE_SKINS.get(biome);
-
-            if (skins != null && skins.length > 0) {
-                int outerIndex;
-
-                if (selectedSkin == null) {
-                    outerIndex = (skins.length == 1) ? 0
-                            : ThreadLocalRandom.current().nextInt(skins.length);
-                    selectedSkin = outerIndex;
-                }
-                else outerIndex = selectedSkin;
-
-                BlockData[] inner = skins[outerIndex];
-                if (inner.length == 0) {
-                    return Material.BIG_DRIPLEAF_STEM.createBlockData();
-                }
-
-                int innerIndex = (inner.length == 1) ? 0
-                        : ThreadLocalRandom.current().nextInt(inner.length);
-                return inner[innerIndex];
-            } else {
-                return Material.BIG_DRIPLEAF_STEM.createBlockData();
-            }
-        }
-
-
-
-        @Override
-        public synchronized void cancel() throws IllegalStateException {
-            super.cancel();
-            for (int i = 0; i < rope.getRenderPoints().size() - 2; i++) {
-                Vector dir = GeneralMethods.getDirection(rope.getRenderPoints().get(i), rope.getRenderPoints().get(i + 1));
-                Location pLoc = rope.getRenderPoints().get(i).clone();
-
-                for (float k = 0; k <= dir.length(); k += 0.3f) {
-                    pLoc.getWorld().spawnParticle(GeneralMethods.getMCVersion() >= 1205 ? Particle.BLOCK : Particle.valueOf("BLOCK_CRACK"), pLoc, 2, 0.5, 0.5, 0.5, 0.1, displays.get(i).getBlock());
-                    pLoc.add(dir.clone().normalize().multiply(0.3));
-                }
-            }
-            displays.forEach(BlockDisplay::remove);
-        }
-
-        public VerletRope getRope() {
-            return rope;
-        }
-
-        public BlockData getCurrentSkin() {
-            return currentSkin;
-        }
-
-        public List<BlockDisplay> getDisplays() {
-            return displays;
-        }
-
-        public long getStart() {
-            return start;
-        }
-
-        public Location getStartLoc() {
-            return startLoc;
-        }
-
-        public Location getEnd() {
-            return end;
-        }
-
-        @Override
-        public void run() {
-            rope.setConstraintIterations(10);
-            rope.simulate(0.016);
-            if (rope.getRenderPoints().size() > displays.size()) {
-                for (int i = displays.size(); i < rope.getRenderPoints().size(); i++) {
-                    BlockDisplay display = (BlockDisplay) rope.getRenderPoints().get(i).getWorld().spawnEntity(rope.getRenderPoints().get(i), EntityType.BLOCK_DISPLAY);
-                    currentSkin = getSkinByStandingBiome(originBiome);
-                    display.setBlock(currentSkin);
-                    display.setPersistent(false);
-                    Transformation t = display.getTransformation();
-                    t.getTranslation().set(new Vector3f(-0.5f, -0.5f, -0.5f));
-                    display.setTransformation(t);
-                    displays.add(display);
-                }
-            }
-            List<Location> points = rope.getRenderPoints();
-            for (int i = 0; i < points.size(); i++) {
-                Location loc = points.get(i).clone();
-
-                Vector direction;
-                if (i > 0 && i < points.size() - 1) {
-                    Vector before = GeneralMethods.getDirection(points.get(i - 1), points.get(i));
-                    Vector after = GeneralMethods.getDirection(points.get(i), points.get(i + 1));
-                    direction = before.add(after).normalize();
-                } else if (i < points.size() - 1) {
-                    direction = GeneralMethods.getDirection(points.get(i), points.get(i + 1)).normalize();
-                } else {
-                    direction = GeneralMethods.getDirection(points.get(i - 1), points.get(i)).normalize();
-                }
-
-                if (i < displays.size()) {
-
-                    final Vector3f dir3 = direction.toVector3f();
-                    if (dir3.lengthSquared() < 1e-6f) {
-                        dir3.set(0, 0, 1);
-                    } else {
-                        dir3.normalize();
-                    }
-                    final Vector3f worldUp = new Vector3f(0, 1, 0);
-                    if (Math.abs(dir3.dot(worldUp)) > 0.999f) {
-                        worldUp.set(1, 0, 0);
-                    }
-                    final Quaternionf lookRot = new Quaternionf().rotationTo(new Vector3f(0, 0, 1), dir3);
-                    final Vector3f localX = new Vector3f(1, 0, 0);
-                    lookRot.transform(localX).normalize();
-
-                    final Quaternionf pitchRot = new Quaternionf().fromAxisAngleRad(localX, (float) Math.toRadians(-90));
-                    final Quaternionf combined = new Quaternionf(pitchRot).mul(lookRot);
-
-                    final Location currentPoint = rope.getRenderPoints().get(i);
-                    final Location next = rope.getRenderPoints().get(i == rope.getRenderPoints().size() -1 ? i : i + 1);
-
-                    final double distance = currentPoint.distance(next);
-                    final float size = distance == 0 ? 1 : (float) distance;
-
-                    final Matrix4f mat = new Matrix4f()
-                            .rotate(combined)
-                            .scale(1, size, 1)
-                            .translate(-0.5f, -0.5f, -0.5f);
-
-                    displays.get(i).setTransformationMatrix(mat);
-                    displays.get(i).setTeleportDuration(2);
-                    displays.get(i).teleport(loc);
-                }
-
-                BlockDisplay display = displays.get(i);
-                BlockData dat = display.getBlock();
-
-                if (dat instanceof CaveVinesPlant cvp) {
-                    if (cvp.isBerries() && isAir(display.getLocation().getBlock().getType())) {
-                        new TempBlock(display.getLocation().getBlock(),
-                                Material.LIGHT.createBlockData(d -> ((Levelled) d).setLevel(13)))
-                                .setRevertTime(10);
-                    }
-                }
-
-
-            }
-        }
-    }
-
-    /**
-     * @param ability can be null
-     * */
-    public static Vine invokeUnlinkedVineTask(Location start, Location end, int segments, @Nullable Ability ability) {
-        return new Vine(start, end, segments, ability);
-    }
-
-    public static Vine invokeUnlinkedVineTask(Location start, Location end, int segments) {
-        return new Vine(start, end, segments, null);
-    }
-
-
-
-
-    public void invokeLandTask(double fallDmg) {
-        new LandTask(fallDmg);
-    }
 
     private class LandTask implements LocalTask {
 
-        private Location location;
-        private TempBlock main;
+        private final Location location;
+        private final TempBlock main;
         private int i;
-        private long start;
+        private final long start;
         private boolean mainGrew;
-        private Material currentSkin;
-        private Class<? extends BlockData> castClass;
+        private final Material currentSkin;
+        private final Class<? extends BlockData> castClass;
         private final Map<TempBlock, Integer> AROUND_PETALS = new HashMap<>();
         private final BlockFace[] AFFECTED_FACES = new BlockFace[]{
                 BlockFace.SOUTH,
@@ -1211,6 +1031,10 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             }
             main = new TempBlock(location.getBlock(), createData(1));
             start = System.currentTimeMillis();
+            if (currentDurability - (int) (falldmg * 10) <= 0) {
+                PlantArmor.this.remove();
+                return;
+            }
             currentDurability -= (int) (falldmg * 10);
             TASKS.add(this);
         }
@@ -1404,6 +1228,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
         private Vine vine;
         private long start;
+        private LivingEntity target;
 
         public TenaciousVinesTask() {
             if (bPlayer.isOnCooldown("TenaciousVines")) {
@@ -1436,25 +1261,29 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         @Override
         public void update() {
 
-            for (VerletPoint point : vine.getRope().getPoints()) {
-                GeneralMethods.getEntitiesAroundPoint(point.getPositionLoc(), 1).stream()
-                        .filter(e -> e instanceof LivingEntity && !e.getUniqueId().equals(player.getUniqueId()))
-                        .map(e -> ((LivingEntity)e))
-                        .findFirst()
-                        .ifPresent(le -> {
-                            point.lock(true);
-                            player.getWorld().playSound(le.getEyeLocation(), Sound.BLOCK_HANGING_ROOTS_PLACE, 1, 1);
-                            final MovementHandler mv = new MovementHandler(le, PlantArmor.this);
-                            mv.stopWithDuration(tenaciousVineStunDuration / 1000 * 20, PlantArmor.this.getElement().getColor() + tenaciousVineStunMessage);
-                            Bukkit.getScheduler().runTaskLater(Hackathon.plugin, () -> {
-                                vine.getRope().lockPoint(0, true);
-                                vine.getRope().lockPoint(vine.getRope().getPoints().size() - 1, true);
-                            }, 40);
-                            Bukkit.getScheduler().runTaskLater(Hackathon.plugin, this::remove, tenaciousVineStunDuration / 1000 * 20);
-                        });
-            }
-            if (vine.getRope().getRenderPoints().stream().allMatch(l -> GeneralMethods.isSolid(l.clone().subtract(0, 0.1, 0).getBlock()))) remove();
-            if (System.currentTimeMillis() > start + 10000) remove();
+           if (target == null) {
+               for (VerletPoint point : vine.getRope().getPoints()) {
+                   GeneralMethods.getEntitiesAroundPoint(point.getPositionLoc(), 1).stream()
+                           .filter(e -> e instanceof LivingEntity && !e.getUniqueId().equals(player.getUniqueId()))
+                           .map(e -> ((LivingEntity)e))
+                           .findFirst()
+                           .ifPresent(le -> {
+                               point.lock(true);
+                               player.getWorld().playSound(le.getEyeLocation(), Sound.BLOCK_HANGING_ROOTS_PLACE, 1, 1);
+                               final MovementHandler mv = new MovementHandler(le, PlantArmor.this);
+                               mv.stopWithDuration(tenaciousVineStunDuration / 1000 * 20, PlantArmor.this.getElement().getColor() + tenaciousVineStunMessage);
+                               Bukkit.getScheduler().runTaskLater(Hackathon.plugin, () -> {
+                                   vine.getRope().lockPoint(0, true);
+                                   vine.getRope().lockPoint(vine.getRope().getPoints().size() - 1, true);
+                               }, 40);
+                               target = le;
+                           });
+               }
+               if (vine.getRope().getRenderPoints().stream().allMatch(l -> GeneralMethods.isSolid(l.clone().subtract(0, 0.1, 0).getBlock()))) remove();
+               if (System.currentTimeMillis() > start + 10000) remove();
+           }
+           else if (!MovementHandler.isStopped(target)) remove();
+
         }
 
         @Override
@@ -1468,16 +1297,17 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
     private class Leaf implements LocalTask {
 
-        private Location origin, location;
+        private final Location origin;
+        private Location location;
         private Vector direction;
-        private BlockDisplay display;
+        private final BlockDisplay display;
 
         public Leaf() {
             origin = player.getEyeLocation();
             location = origin.clone().add(HackathonMethods.getRandom().multiply(0.25));
             direction = player.getLocation().getDirection().multiply(leafsSpeed);
 
-            display = (BlockDisplay) origin.getWorld().spawnEntity(location.clone().add(0.5, 0.5, 0.5), EntityType.BLOCK_DISPLAY);
+            display = (BlockDisplay) Objects.requireNonNull(origin.getWorld()).spawnEntity(location.clone().add(0.5, 0.5, 0.5), EntityType.BLOCK_DISPLAY);
             display.setTransformation(new Transformation(
                     new Vector3f(-0.5f, -0.5f, -0.5f),
                     new Quaternionf().rotateLocalX(RANDOM.nextFloat()).rotateLocalY(RANDOM.nextFloat()).rotateLocalZ(RANDOM.nextFloat()),
@@ -1500,7 +1330,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                     direction = direction.subtract(new Vector(0, 0.06, 0));
                 }
                 else {
-                    location.getWorld().spawnParticle(Particle.TINTED_LEAVES, location, 1, 0, 0, 0, 0, mostCommonBlock.getMapColor());
+                    Objects.requireNonNull(location.getWorld()).spawnParticle(Particle.TINTED_LEAVES, location, 1, 0, 0, 0, 0, mostCommonBlock.getMapColor());
                     removeLeaf(true);
                 }
             }
@@ -1570,7 +1400,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
         @Override
         public void update() {
-
+            ActionBar.sendActionBar(getElement().getColor() + leafLeftAmountMessage.replace("{amount}", String.valueOf(leafsAmount - counter)), player);
             if (counter > leafsAmount) remove();
         }
 
@@ -1581,23 +1411,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         }
     }
 
-    public boolean hasPlantArmorSubAbility(Class<? extends LocalTask> clazz) {
-        return TASKS.stream().anyMatch(lt -> lt.getClass().equals(clazz));
-    }
 
-
-    public <T> Optional<T> getPlantArmorSubAbility(Class<T> clazz) {
-        if (!LocalTask.class.isAssignableFrom(clazz)) {
-            return Optional.empty();
-        }
-
-        for (LocalTask task : TASKS) {
-            if (clazz.isInstance(task)) {
-                return Optional.of(clazz.cast(task));
-            }
-        }
-        return Optional.empty();
-    }
 
     private class PlantShieldTask implements LocalTask {
 
@@ -1623,7 +1437,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             shpere = new ArrayList<>();
 
             player.getWorld().playSound(player.getEyeLocation(), Sound.BLOCK_BIG_DRIPLEAF_TILT_DOWN, 1, 1);
-
+            currentDurability -= shieldDurabilityTakeCount;
             TASKS.add(this);
         }
 
@@ -1664,7 +1478,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                     return;
                 }
                 blocks.forEach(tb -> {
-                    RayTraceResult result = location.getWorld().rayTraceEntities(location, dir, 1, 1, e -> e instanceof LivingEntity && !e.getUniqueId().equals(player.getUniqueId()));
+                    RayTraceResult result = Objects.requireNonNull(location.getWorld()).rayTraceEntities(location, dir, 1, 1, e -> e instanceof LivingEntity && !e.getUniqueId().equals(player.getUniqueId()));
                     Optional.ofNullable(result)
                             .map(RayTraceResult::getHitEntity)
                             .map(e -> ((LivingEntity)e))
@@ -1672,7 +1486,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                                 player.getWorld().playSound(e.getEyeLocation(), Sound.BLOCK_BIG_DRIPLEAF_TILT_DOWN, 1, 1);
                                 DamageHandler.damageEntity(e, player, shieldThrowDamage, PlantArmor.this);
                                 GeneralMethods.getCircle(e.getLocation(), (int) shieldSphereRadius, 0, true, true, 0)
-                                        .forEach(b -> new TempBlock(b.getBlock(), !mostCommonBlock.getMaterial().isSolid() ? Material.AZALEA_LEAVES.createBlockData() : mostCommonBlock, shieldSphereDuration));
+                                        .forEach(b -> ALL_TEMP_BLOCKS.add(new TempBlock(b.getBlock(), !mostCommonBlock.getMaterial().isSolid() ? Material.AZALEA_LEAVES.createBlockData() : mostCommonBlock, shieldSphereDuration)));
                             });
                 });
                 updateShield(location, dir);
@@ -1699,6 +1513,8 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                 }
             }
             blocks.add(new TempBlock(origin.getBlock(), !mostCommonBlock.getMaterial().isSolid() ? Material.AZALEA_LEAVES.createBlockData() : mostCommonBlock));
+            ALL_TEMP_BLOCKS.addAll(blocks);
+            ALL_TEMP_BLOCKS.removeIf(TempBlock::isReverted);
             if (blocks.isEmpty()) remove();
         }
 
@@ -1730,6 +1546,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
         private long start, in;
         private int counter, counterHeight;
         private boolean grew;
+
 
         public DomeTask() {
             if (bPlayer.isOnCooldown("LeafDome")) {
@@ -1774,6 +1591,8 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                     GeneralMethods.getCircle(player.getLocation(), counter, 0, true, true, 0).stream()
                             .filter(l -> l.getBlockY() <= player.getLocation().getBlockY() + counterHeight || l.getBlockY() >= player.getLocation().getBlockY() - counterHeight && !GeneralMethods.isSolid(l.getBlock()) && !TempBlock.isTempBlock(l.getBlock()))
                             .forEach(l -> blocks.add(new TempBlock(l.getBlock(), !mostCommonBlock.getMaterial().isSolid() ? Material.AZALEA_LEAVES.createBlockData() : mostCommonBlock)));
+                    ALL_TEMP_BLOCKS.addAll(blocks);
+                    ALL_TEMP_BLOCKS.removeIf(TempBlock::isReverted);
                     if (counter >= domeRadius) {
                         counterHeight++;
                     }
@@ -1784,6 +1603,8 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                         GeneralMethods.getCircle(player.getLocation(), (int) domeRadius, 0, true, true, 0).stream()
                                 .filter(l -> !GeneralMethods.isSolid(l.getBlock()) && !TempBlock.isTempBlock(l.getBlock()))
                                 .forEach(l -> blocks.add(new TempBlock(l.getBlock(), !mostCommonBlock.getMaterial().isSolid() ? Material.AZALEA_LEAVES.createBlockData() : mostCommonBlock, domeDuration)));
+                        ALL_TEMP_BLOCKS.addAll(blocks);
+                        ALL_TEMP_BLOCKS.removeIf(TempBlock::isReverted);
                         grew = true;
                     }
                     if (!player.isSneaking() || player.getInventory().getHeldItemSlot() != 6) {
@@ -1804,26 +1625,13 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
     }
 
 
-    public int getCurrentDurability() {
-        return currentDurability;
-    }
-
-    public void decreaseDurability(int count) {
-        if (currentDurability - count <= 0) return;
-        currentDurability -= count;
-    }
-
-    public BlockData getMostCommonBlock() {
-        return mostCommonBlock;
-    }
-
     private class TextDisplayTask implements LocalTask {
 
-        private TextDisplay display;
-        private long start;
+        private final TextDisplay display;
+        private final long start;
 
         public TextDisplayTask(String message) {
-            TASKS.add(this);
+
             display = (TextDisplay) player.getWorld().spawnEntity(player.getEyeLocation().add(HackathonMethods.getRandom()), EntityType.TEXT_DISPLAY);
             display.setText(message);
             display.setBillboard(Display.Billboard.CENTER);
@@ -1834,11 +1642,9 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                     new Quaternionf()
             ));
             display.setBackgroundColor(Color.fromARGB(0));
-            display.setVisibleByDefault(false);
             display.setBrightness(new Display.Brightness(15, 15));
-            player.showEntity(Hackathon.plugin, display);
             start = System.currentTimeMillis();
-
+            TASKS.add(this);
         }
 
         @Override
@@ -1856,7 +1662,6 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                 if (display.getTransformation().getScale().x < 0.01) remove();
             }
         }
-
         @Override
         public void remove() {
             if (GeneralMethods.getMCVersion() > 1214) {
@@ -1871,4 +1676,930 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
         }
     }
+
+    public void updateActionBarMessages() {
+
+        COOLDOWNS.keySet().removeIf(s -> !bPlayer.isOnCooldown(s));
+
+        getMultiAbilities().forEach(m -> {
+
+            if (ChatColor.stripColor(bPlayer.getBoundAbilityName()).equalsIgnoreCase(m.getName())) {
+                if (!bPlayer.isOnCooldown("PlantArmorActionMsg")) {
+                    if (bPlayer.isOnCooldown(m.getName())) {
+                        if (player.getInventory().getHeldItemSlot() == 1 && hasPlantArmorSubAbility(SharpLeafsTask.class)) {
+                            ActionBar.sendActionBar(getElement().getColor() + leafLeftAmountMessage.replace("{amount}", String.valueOf(leafsAmount - getPlantArmorSubAbility(SharpLeafsTask.class).orElseThrow().counter + 1)), player);
+                        }
+                        else {
+                            final Pair<Long, Long> cooldown = COOLDOWNS.get(m.getName());
+                            ActionBar.sendActionBar(ChatColor.RED + "❌ " + ChatColor.STRIKETHROUGH + m.getName() + ChatColor.RESET + ChatColor.RED + " - " + HackathonMethods.round((double) ((cooldown.getLeft() + cooldown.getRight()) - System.currentTimeMillis()) / 1000, 1) + "s", player);
+                        }
+                    }
+                    else {
+                        if (TASKS_BY_NAME.containsKey(ChatColor.stripColor(bPlayer.getBoundAbilityName())) && hasPlantArmorSubAbility(TASKS_BY_NAME.get(ChatColor.stripColor(bPlayer.getBoundAbilityName())))) {
+                            if (!ChatColor.stripColor(bPlayer.getBoundAbilityName()).equals("SharpLeaves")) ActionBar.sendActionBar(ChatColor.YELLOW + "🔁 " + m.getName(), player);
+
+                        }
+                        else ActionBar.sendActionBar(ChatColor.GREEN + "✅ " + m.getAbilityColor() + m.getName(), player);
+                    }
+                }
+            }
+        });
+    }
+
+
+
+    public void updateBossbarDurabilityColor() {
+        if (durabilityBar.getProgress() <= 0.15) {
+            durabilityBar.setColor(BarColor.RED);
+        }
+        else if (durabilityBar.getProgress() <= 0.5) {
+            durabilityBar.setColor(BarColor.YELLOW);
+        } else {
+            durabilityBar.setColor(BarColor.GREEN);
+        }
+    }
+
+    private void buildTitle() {
+        durabilityBar.setProgress((double) currentDurability / maxDurability);
+        String finalTitle = durabilityTitle
+                .replace("{current}", String.valueOf(currentDurability))
+                .replace("{max}", String.valueOf(maxDurability));
+        durabilityBar.setTitle(GradientAPI.colorize("<#247A4E>" + finalTitle + "</#7CCF36>"));
+    }
+
+    /**
+     * @param ability can be null
+     * */
+    public static Vine invokeUnlinkedVineTask(Location start, Location end, int segments, @Nullable Ability ability) {
+        return new Vine(start, end, segments, ability);
+    }
+
+    public static Vine invokeUnlinkedVineTask(Location start, Location end, int segments) {
+        return new Vine(start, end, segments, null);
+    }
+
+    public boolean hasPlantArmorSubAbility(Class<? extends LocalTask> clazz) {
+        return TASKS.stream().anyMatch(lt -> lt.getClass().equals(clazz));
+    }
+
+
+    public <T> Optional<T> getPlantArmorSubAbility(Class<T> clazz) {
+        if (!LocalTask.class.isAssignableFrom(clazz)) {
+            return Optional.empty();
+        }
+
+        for (LocalTask task : TASKS) {
+            if (clazz.isInstance(task)) {
+                return Optional.of(clazz.cast(task));
+            }
+        }
+        return Optional.empty();
+    }
+
+
+    public interface LocalTask {
+        void update();
+        void remove();
+        default boolean isRemoved() {
+            try {
+                Field listField = PlantArmor.class.getDeclaredField("TASKS");
+                listField.setAccessible(true);
+                @SuppressWarnings("unchecked")
+                List<LocalTask> list = (List<LocalTask>) listField.get(this);
+                return !list.contains(this);
+            } catch (Exception e) {
+                Logger.sendError(e.getMessage());
+                remove();
+            }
+            return true;
+        }
+    }
+
+    public boolean isFormed() {
+        return isFormed;
+    }
+
+    public boolean isForming() {
+        return isForming;
+    }
+
+    public enum InteractionType { LEFT_CLICK, RIGHT_CLICK, SNEAK_DOWN, SNEAK_UP }
+
+    public void setInteraction(int slot, InteractionType type) {
+        switch (slot) {
+            case 0 -> {
+                if (type == InteractionType.LEFT_CLICK) new VineWhipTask();
+            }
+            case 1 -> {
+                if (type == InteractionType.LEFT_CLICK) {
+                    if (!hasPlantArmorSubAbility(SharpLeafsTask.class)) new SharpLeafsTask();
+                    else {
+                        getPlantArmorSubAbility(SharpLeafsTask.class).orElseThrow().launch();
+                    }
+                }
+            }
+            case 2 -> {
+                if (type == InteractionType.LEFT_CLICK) new TenaciousVinesTask();
+            }
+            case 3 -> {
+                if (type == InteractionType.LEFT_CLICK) new VineGrappleTask();
+            }
+            case 4 -> {
+                if (type == InteractionType.LEFT_CLICK || type == InteractionType.SNEAK_DOWN) new LeapTask(type);
+            }
+            case 5 -> {
+                if (type == InteractionType.SNEAK_DOWN) new PlantShieldTask();
+                else if (type == InteractionType.LEFT_CLICK && hasPlantArmorSubAbility(PlantShieldTask.class)) getPlantArmorSubAbility(PlantShieldTask.class).orElseThrow().launch();
+            }
+            case 6 -> {
+                if (type == InteractionType.SNEAK_DOWN) new DomeTask();
+                else if (type == InteractionType.LEFT_CLICK && hasPlantArmorSubAbility(DomeTask.class)) getPlantArmorSubAbility(DomeTask.class).orElseThrow().explode();
+            }
+            case 7 -> {
+                if (type == InteractionType.SNEAK_DOWN) isRegenerating = true;
+                else if (type == InteractionType.SNEAK_UP && !bPlayer.isOnCooldown("RegeneratingAssembly")) {
+                    isRegenerating = false;
+                    bPlayer.addCooldown("RegeneratingAssembly", regenCooldown);
+                }
+            }
+            case 8 -> {
+                if (type == InteractionType.LEFT_CLICK) remove();
+            }
+        }
+    }
+
+
+
+    public static void redirectEvent(InteractionType type, Player player) {
+        if (hasAbility(player, PlantArmor.class)) {
+            PlantArmor armor = getAbility(player, PlantArmor.class);
+            if (armor.isFormed()) {
+                armor.setInteraction(player.getInventory().getHeldItemSlot(), type);
+            }
+        }
+    }
+
+
+    public void invokeLandTask(double fallDmg) {
+        new LandTask(fallDmg);
+    }
+
+    private List<Block> cachedBlocks = new ArrayList<>();
+    private long lastCacheUpdate = 0;
+
+    private void updateCacheIfNeeded() {
+        if (System.currentTimeMillis() - lastCacheUpdate > 250) {
+            cachedBlocks.clear();
+            for (Block b : GeneralMethods.getBlocksAroundPoint(player.getEyeLocation(), collectRange)) {
+                if (!PLANT_VOLUMES.containsKey(b.getType())) continue;
+                if (TempBlock.isTempBlock(b)) continue;
+                cachedBlocks.add(b);
+            }
+            lastCacheUpdate = System.currentTimeMillis();
+        }
+    }
+
+    public void form() {
+        OLD_ARMOR = new ItemStack[] {
+                player.getInventory().getHelmet(),
+                player.getInventory().getChestplate(),
+                player.getInventory().getLeggings(),
+                player.getInventory().getBoots()
+        };
+
+
+        Color finalColor = HackathonMethods.averageColor(COLLECTED_COLORS);
+        Material helmetType = AFFECTED_MATERIALS_LEADERBOARD.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .map(Map.Entry::getKey)
+                .orElse(ThreadLocalRandom.current().nextBoolean() ? Material.AZALEA : Material.FLOWERING_AZALEA);
+        mostCommonBlock = helmetType.createBlockData();
+        ItemStack helmet = new ItemStack(!helmetType.isItem() ? (ThreadLocalRandom.current().nextBoolean() ? Material.AZALEA : Material.FLOWERING_AZALEA) : helmetType);
+        ItemStack chestplate = new ItemStack(Material.LEATHER_CHESTPLATE);
+        ItemStack leggings = new ItemStack(Material.LEATHER_LEGGINGS);
+        ItemStack boots = new ItemStack(Material.LEATHER_BOOTS);
+
+        setupArmor(chestplate, finalColor, "<#247A4E>- ᴅᴇᴄɪᴅᴜᴏᴜs ᴄʜᴇsᴛᴘʟᴀᴛᴇ -</#7CCF36>");
+        setupArmor(leggings, finalColor, "<#247A4E>- ʙʀᴏᴀᴅʟᴇᴀꜰ ʟᴇɢɢɪɴɢs -</#7CCF36>");
+        setupArmor(boots, finalColor, "<#247A4E>- ᴘʟᴀɴᴛ ʙᴏᴏᴛs -</#7CCF36>");
+
+        ItemMeta hMeta = helmet.getItemMeta();
+        assert hMeta != null;
+        hMeta.setUnbreakable(true);
+        hMeta.addEnchant(Enchantment.BINDING_CURSE, 1, true);
+        hMeta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES, ItemFlag.HIDE_ENCHANTS);
+        hMeta.setItemName(GradientAPI.colorize("<#247A4E>- ʜᴀɴɢɪɴɢ ᴍᴏss -</#7CCF36>"));
+        hMeta.setLore(List.of("", ChatColor.of("#247A4E") + " - Just a piece of moss that you put on your head for fun :/"));
+        hMeta.setEnchantmentGlintOverride(false);
+        hMeta.getPersistentDataContainer().set(ARMOR_UNIQUE_KEY, PersistentDataType.BYTE, (byte)1);
+        helmet.setItemMeta(hMeta);
+
+        player.getInventory().setHelmet(helmet);
+        player.getInventory().setChestplate(chestplate);
+        player.getInventory().setLeggings(leggings);
+        player.getInventory().setBoots(boots);
+
+        MultiAbilityManager.bindMultiAbility(player, getName());
+        isRegenerating = false;
+        isForming = false;
+        isFormed = true;
+    }
+
+    private void setupArmor(ItemStack item, Color color, String name) {
+        LeatherArmorMeta meta = (LeatherArmorMeta) item.getItemMeta();
+        if (meta == null) return;
+
+        meta.setColor(color);
+        meta.setUnbreakable(true);
+        meta.addEnchant(Enchantment.BINDING_CURSE, 1, true);
+        meta.addItemFlags(ItemFlag.HIDE_ATTRIBUTES, ItemFlag.HIDE_ENCHANTS);
+        meta.setItemName(GradientAPI.colorize(name));
+        meta.setEnchantmentGlintOverride(false);
+        meta.getPersistentDataContainer().set(ARMOR_UNIQUE_KEY, PersistentDataType.BYTE, (byte)1);
+
+        item.setItemMeta(meta);
+    }
+
+    public void regenerate() {
+        if (bPlayer.isOnCooldown("RegeneratingAssembly")) return;
+        if (System.currentTimeMillis() > getStartTime() + i) {
+            updateCacheIfNeeded();
+            if (!cachedBlocks.isEmpty()) {
+                Block chosen = cachedBlocks.get(ThreadLocalRandom.current().nextInt(cachedBlocks.size()));
+                new MovingBlockTask(chosen);
+            }
+            i += collectInterval;
+        }
+    }
+
+    public static boolean isPlantArmor(ItemStack stack) {
+        return Optional.ofNullable(stack)
+                .map(ItemStack::getItemMeta)
+                .map(ItemMeta::getPersistentDataContainer)
+                .filter(pdc -> pdc.has(ARMOR_UNIQUE_KEY))
+                .isPresent();
+    }
+
+
+
+    public int getCurrentDurability() {
+        return currentDurability;
+    }
+
+    public void decreaseDurability(int count) {
+        if (currentDurability - count <= 0) return;
+        currentDurability -= count;
+    }
+
+    public Set<TempBlock> getALL_TEMP_BLOCKS() {
+        return ALL_TEMP_BLOCKS;
+    }
+
+    public static Set<TempBlock> getALL_COLLECTED_TEMP_BLOCKS() {
+        return getAbilities(PlantArmor.class).stream()
+                .flatMap(pa -> pa.ALL_TEMP_BLOCKS.stream())
+                .collect(Collectors.toSet());
+    }
+
+    public BlockData getMostCommonBlock() {
+        return mostCommonBlock;
+    }
+
+    public Map<String, Pair<Long, Long>> getCOOLDOWNS() {
+        return COOLDOWNS;
+    }
+
+    public Set<LocalTask> getTASKS() {
+        return TASKS;
+    }
+
+    public BossBar getDurabilityBar() {
+        return durabilityBar;
+    }
+
+    public int getDolphinGraceBoost() {
+        return dolphinGraceBoost;
+    }
+
+    public double getCollectRange() {
+        return collectRange;
+    }
+
+    public int getJumpBoost() {
+        return jumpBoost;
+    }
+
+    public double getCollectSpeed() {
+        return collectSpeed;
+    }
+
+    public int getMaxDurability() {
+        return maxDurability;
+    }
+
+    public int getCollectInterval() {
+        return collectInterval;
+    }
+
+    public int getSpeedBoost() {
+        return speedBoost;
+    }
+
+    public int getI() {
+        return i;
+    }
+
+    public double getWhipAnglePower() {
+        return whipAnglePower;
+    }
+
+    public double getWhipCollisionRadius() {
+        return whipCollisionRadius;
+    }
+
+    public int getWhipDurationTakeCount() {
+        return whipDurationTakeCount;
+    }
+
+    public double getWhipDamage() {
+        return whipDamage;
+    }
+
+    public int getWhipRange() {
+        return whipRange;
+    }
+
+    public ItemStack[] getOLD_ARMOR() {
+        return OLD_ARMOR;
+    }
+
+    public int getWhipGrowInterval() {
+        return whipGrowInterval;
+    }
+
+    public List<Color> getCOLLECTED_COLORS() {
+        return COLLECTED_COLORS;
+    }
+
+    public int getLeafsAmount() {
+        return leafsAmount;
+    }
+
+    public double getLeafsDamage() {
+        return leafsDamage;
+    }
+
+    public double getWhipKnockback() {
+        return whipKnockback;
+    }
+
+    public long getWhipCooldown() {
+        return whipCooldown;
+    }
+
+    public double getWhipMinSlapPower() {
+        return whipMinSlapPower;
+    }
+
+    public long getWhipDuration() {
+        return whipDuration;
+    }
+
+    public static Map<Biome, BlockData[][]> getVineSkins() {
+        return VINE_SKINS;
+    }
+
+    public Map<Biome, Pair<BlockData, Class<? extends BlockData>>> getPASSIVE_SKINS() {
+        return PASSIVE_SKINS;
+    }
+
+    public int getLeafsDurabilityTakeCount() {
+        return leafsDurabilityTakeCount;
+    }
+    public double getLeafsAngleDirection() {
+        return leafsAngleDirection;
+    }
+    //2000 LINE WOW
+    public double getLeafsCollisionRadius() {
+        return leafsCollisionRadius;
+    }
+
+    public static Map<List<Material>, List<Biome>> getBiomeContents() {
+        return BIOME_CONTENTS;
+    }
+
+    public Map<Material, Integer> getAFFECTED_MATERIALS_LEADERBOARD() {
+        return AFFECTED_MATERIALS_LEADERBOARD;
+    }
+
+    public Set<TempBlock> getAFFECTED_BLOCKS() {
+        return AFFECTED_BLOCKS;
+    }
+
+    public String getCooldownMessage() {
+        return cooldownMessage;
+    }
+
+    public double getLeafsSpeed() {
+        return leafsSpeed;
+    }
+
+    //year of creating ability!
+    public String getDurabilityTitle() {
+        return durabilityTitle;
+    }
+
+    public String getNotEnoughDurabilityMessage() {
+        return notEnoughDurabilityMessage;
+    }
+
+    public ThreadLocalRandom getRANDOM() {
+        return RANDOM;
+    }
+
+    public double getGrappleAnglePower() {
+        return grappleAnglePower;
+    }
+
+    public double getGrappleDash() {
+        return grappleDash;
+    }
+
+    public double getGrapplePullSpeed() {
+        return grapplePullSpeed;
+    }
+
+    public double getLeafsRange() {
+        return leafsRange;
+    }
+
+    public double getLeapMinPower() {
+        return leapMinPower;
+    }
+
+    public double getLeapPowerPerPower() {
+        return leapPowerPerPower;
+    }
+
+    public double getShieldOffset() {
+        return shieldOffset;
+    }
+
+    public double getShieldRadius() {
+        return shieldRadius;
+    }
+
+    public double getDomeRadius() {
+        return domeRadius;
+    }
+
+    public double getTenaciousVinePower() {
+        return tenaciousVinePower;
+    }
+
+    public double getShieldThrowDamage() {
+        return shieldThrowDamage;
+    }
+
+    public double getDomeSegmentDamage() {
+        return domeSegmentDamage;
+    }
+
+    public double getShieldSphereRadius() {
+        return shieldSphereRadius;
+    }
+
+    public double getShieldThrowRange() {
+        return shieldThrowRange;
+    }
+
+    public int getGrappleDurabilityTakeCount() {
+        return grappleDurabilityTakeCount;
+    }
+
+    public double getShieldThrowSpeed() {
+        return shieldThrowSpeed;
+    }
+
+    public int getDomeDurabilityTakeCount() {
+        return domeDurabilityTakeCount;
+    }
+
+    public int getDomeGrowInterval() {
+        return domeGrowInterval;
+    }
+
+    public int getGrappleGrowInterval() {
+        return grappleGrowInterval;
+    }
+
+    public int getGrappleRange() {
+        return grappleRange;
+    }
+
+    public int getLeapDurabilityTakeCount() {
+        return leapDurabilityTakeCount;
+    }
+
+    public int getLeapMaxStages() {
+        return leapMaxStages;
+    }
+
+    public int getShieldDurabilityTakeCount() {
+        return shieldDurabilityTakeCount;
+    }
+
+    public int getTenaciousVineDurabilityTakeCount() {
+        return tenaciousVineDurabilityTakeCount;
+    }
+
+    public int getTenaciousVineRange() {
+        return tenaciousVineRange;
+    }
+
+    public List<Block> getCachedBlocks() {
+        return cachedBlocks;
+    }
+
+    public long getGrappleCooldown() {
+        return grappleCooldown;
+    }
+
+    public long getDomeCooldown() {
+        return domeCooldown;
+    }
+
+    public long getDomeDuration() {
+        return domeDuration;
+    }
+
+    public long getGrappleDurationIfMissed() {
+        return grappleDurationIfMissed;
+    }
+
+    public long getLeafsCooldown() {
+        return leafsCooldown;
+    }
+
+    public long getLeapCooldown() {
+        return leapCooldown;
+    }
+
+    public long getLastCacheUpdate() {
+        return lastCacheUpdate;
+    }
+
+    public long getLeapLevelupInterval() {
+        return leapLevelupInterval;
+    }
+
+    public long getRegenCooldown() {
+        return regenCooldown;
+    }
+
+    public long getShieldCooldown() {
+        return shieldCooldown;
+    }
+
+    public long getShieldSphereDuration() {
+        return shieldSphereDuration;
+    }
+
+    public long getShieldThrowCooldown() {
+        return shieldThrowCooldown;
+    }
+
+    public long getTenaciousVineCooldown() {
+        return tenaciousVineCooldown;
+    }
+
+    public long getTenaciousVineStunDuration() {
+        return tenaciousVineStunDuration;
+    }
+
+    public String getLeafLeftAmountMessage() {
+        return leafLeftAmountMessage;
+    }
+
+    public String getTenaciousVineStunMessage() {
+        return tenaciousVineStunMessage;
+    }
+
+    public boolean isRegenerating() {
+        return isRegenerating;
+    }
+
+    public void setCurrentDurability(int currentDurability) {
+        this.currentDurability = currentDurability;
+    }
+
+    public void setDurabilityBar(BossBar durabilityBar) {
+        this.durabilityBar = durabilityBar;
+    }
+
+    public void setForming(boolean forming) {
+        isForming = forming;
+    }
+
+    public void setFormed(boolean formed) {
+        if (formed && !isFormed) form();
+        isFormed = formed;
+    }
+
+    public static void setBiomeContents(Map<List<Material>, List<Biome>> biomeContents) {
+        BIOME_CONTENTS = biomeContents;
+    }
+
+    public void setLeafsAmount(int leafsAmount) {
+        this.leafsAmount = leafsAmount;
+    }
+
+    public void setMaxDurability(int maxDurability) {
+        this.maxDurability = maxDurability;
+    }
+
+    public void setCollectInterval(int collectInterval) {
+        this.collectInterval = collectInterval;
+    }
+
+    public void setOLD_ARMOR(ItemStack[] OLD_ARMOR) {
+        this.OLD_ARMOR = OLD_ARMOR;
+    }
+
+    public void setCollectRange(double collectRange) {
+        this.collectRange = collectRange;
+    }
+
+    public void setCollectSpeed(double collectSpeed) {
+        this.collectSpeed = collectSpeed;
+    }
+
+    public void setCooldown(long cooldown) {
+        this.cooldown = cooldown;
+    }
+
+    public void setCooldownMessage(String cooldownMessage) {
+        this.cooldownMessage = cooldownMessage;
+    }
+
+    public void setDolphinGraceBoost(int dolphinGraceBoost) {
+        this.dolphinGraceBoost = dolphinGraceBoost;
+    }
+
+    public void setDurabilityTitle(String durabilityTitle) {
+        this.durabilityTitle = durabilityTitle;
+    }
+
+    public void setI(int i) {
+        this.i = i;
+    }
+
+    public void setJumpBoost(int jumpBoost) {
+        this.jumpBoost = jumpBoost;
+    }
+
+    public void setLeafsDurabilityTakeCount(int leafsDurabilityTakeCount) {
+        this.leafsDurabilityTakeCount = leafsDurabilityTakeCount;
+    }
+
+    public void setMostCommonBlock(BlockData mostCommonBlock) {
+        this.mostCommonBlock = mostCommonBlock;
+    }
+
+    public void setNotEnoughDurabilityMessage(String notEnoughDurabilityMessage) {
+        this.notEnoughDurabilityMessage = notEnoughDurabilityMessage;
+    }
+
+    public void setRegenerating(boolean regenerating) {
+        isRegenerating = regenerating;
+    }
+
+    public void setLeafLeftAmountMessage(String leafLeftAmountMessage) {
+        this.leafLeftAmountMessage = leafLeftAmountMessage;
+    }
+
+    public void setLeafsAngleDirection(double leafsAngleDirection) {
+        this.leafsAngleDirection = leafsAngleDirection;
+    }
+
+    public void setLeafsCollisionRadius(double leafsCollisionRadius) {
+        this.leafsCollisionRadius = leafsCollisionRadius;
+    }
+
+    public void setLeafsSpeed(double leafsSpeed) {
+        this.leafsSpeed = leafsSpeed;
+    }
+
+    public void setLeafsCooldown(long leafsCooldown) {
+        this.leafsCooldown = leafsCooldown;
+    }
+
+    public void setSpeedBoost(int speedBoost) {
+        this.speedBoost = speedBoost;
+    }
+
+    public void setLeafsDamage(double leafsDamage) {
+        this.leafsDamage = leafsDamage;
+    }
+
+    public void setLeafsRange(double leafsRange) {
+        this.leafsRange = leafsRange;
+    }
+
+    public void setTenaciousVineDurabilityTakeCount(int tenaciousVineDurabilityTakeCount) {
+        this.tenaciousVineDurabilityTakeCount = tenaciousVineDurabilityTakeCount;
+    }
+
+    public void setGrappleAnglePower(double grappleAnglePower) {
+        this.grappleAnglePower = grappleAnglePower;
+    }
+
+    public void setGrappleCooldown(long grappleCooldown) {
+        this.grappleCooldown = grappleCooldown;
+    }
+
+    public void setGrappleDurabilityTakeCount(int grappleDurabilityTakeCount) {
+        this.grappleDurabilityTakeCount = grappleDurabilityTakeCount;
+    }
+
+    public void setGrappleDash(double grappleDash) {
+        this.grappleDash = grappleDash;
+    }
+
+    public void setGrappleDurationIfMissed(long grappleDurationIfMissed) {
+        this.grappleDurationIfMissed = grappleDurationIfMissed;
+    }
+
+    public void setGrappleGrowInterval(int grappleGrowInterval) {
+        this.grappleGrowInterval = grappleGrowInterval;
+    }
+
+    public void setGrapplePullSpeed(double grapplePullSpeed) {
+        this.grapplePullSpeed = grapplePullSpeed;
+    }
+
+    public void setGrappleRange(int grappleRange) {
+        this.grappleRange = grappleRange;
+    }
+
+    public void setLeapDurabilityTakeCount(int leapDurabilityTakeCount) {
+        this.leapDurabilityTakeCount = leapDurabilityTakeCount;
+    }
+
+    public void setLeapCooldown(long leapCooldown) {
+        this.leapCooldown = leapCooldown;
+    }
+
+    public void setLeapLevelupInterval(long leapLevelupInterval) {
+        this.leapLevelupInterval = leapLevelupInterval;
+    }
+
+    public void setTenaciousVineCooldown(long tenaciousVineCooldown) {
+        this.tenaciousVineCooldown = tenaciousVineCooldown;
+    }
+
+    public void setLeapMaxStages(int leapMaxStages) {
+        this.leapMaxStages = leapMaxStages;
+    }
+
+    public void setTenaciousVinePower(double tenaciousVinePower) {
+            this.tenaciousVinePower = tenaciousVinePower;
+    }
+
+    public void setLeapMinPower(double leapMinPower) {
+        this.leapMinPower = leapMinPower;
+    }
+
+    public void setLeapPowerPerPower(double leapPowerPerPower) {
+        this.leapPowerPerPower = leapPowerPerPower;
+    }
+
+    public void setTenaciousVineRange(int tenaciousVineRange) {
+        this.tenaciousVineRange = tenaciousVineRange;
+    }
+
+    public void setTenaciousVineStunDuration(long tenaciousVineStunDuration) {
+        this.tenaciousVineStunDuration = tenaciousVineStunDuration;
+    }
+
+    public void setDomeDurabilityTakeCount(int domeDurabilityTakeCount) {
+        this.domeDurabilityTakeCount = domeDurabilityTakeCount;
+    }
+
+    public void setTenaciousVineStunMessage(String tenaciousVineStunMessage) {
+        this.tenaciousVineStunMessage = tenaciousVineStunMessage;
+    }
+
+    public void setShieldOffset(double shieldOffset) {
+        this.shieldOffset = shieldOffset;
+    }
+
+    public void setShieldRadius(double shieldRadius) {
+        this.shieldRadius = shieldRadius;
+    }
+
+    public void setShieldThrowSpeed(double shieldThrowSpeed) {
+        this.shieldThrowSpeed = shieldThrowSpeed;
+    }
+
+    public void setShieldThrowDamage(double shieldThrowDamage) {
+        this.shieldThrowDamage = shieldThrowDamage;
+    }
+
+    public void setShieldCooldown(long shieldCooldown) {
+        this.shieldCooldown = shieldCooldown;
+    }
+
+    public void setWhipAnglePower(double whipAnglePower) {
+        this.whipAnglePower = whipAnglePower;
+    }
+
+    public void setWhipCollisionRadius(double whipCollisionRadius) {
+        this.whipCollisionRadius = whipCollisionRadius;
+    }
+
+    public void setWhipCooldown(long whipCooldown) {
+        this.whipCooldown = whipCooldown;
+    }
+
+    public void setWhipDamage(double whipDamage) {
+        this.whipDamage = whipDamage;
+    }
+
+    public void setWhipDuration(long whipDuration) {
+        this.whipDuration = whipDuration;
+    }
+
+    public void setWhipDurationTakeCount(int whipDurationTakeCount) {
+        this.whipDurationTakeCount = whipDurationTakeCount;
+    }
+
+    public void setWhipGrowInterval(int whipGrowInterval) {
+        this.whipGrowInterval = whipGrowInterval;
+    }
+
+    public void setWhipKnockback(double whipKnockback) {
+        this.whipKnockback = whipKnockback;
+    }
+
+    public void setWhipMinSlapPower(double whipMinSlapPower) {
+        this.whipMinSlapPower = whipMinSlapPower;
+    }
+
+    public void setWhipRange(int whipRange) {
+        this.whipRange = whipRange;
+    }
+
+    public void setCachedBlocks(List<Block> cachedBlocks) {
+        this.cachedBlocks = cachedBlocks;
+    }
+
+    public void setDomeCooldown(long domeCooldown) {
+        this.domeCooldown = domeCooldown;
+    }
+
+    public void setDomeDuration(long domeDuration) {
+        this.domeDuration = domeDuration;
+    }
+
+    public void setDomeGrowInterval(int domeGrowInterval) {
+        this.domeGrowInterval = domeGrowInterval;
+    }
+
+    public void setDomeRadius(double domeRadius) {
+        this.domeRadius = domeRadius;
+    }
+
+    public void setDomeSegmentDamage(double domeSegmentDamage) {
+        this.domeSegmentDamage = domeSegmentDamage;
+    }
+
+    public void setLastCacheUpdate(long lastCacheUpdate) {
+        this.lastCacheUpdate = lastCacheUpdate;
+    }
+
+    public void setRegenCooldown(long regenCooldown) {
+        this.regenCooldown = regenCooldown;
+    }
+
+    public void setShieldDurabilityTakeCount(int shieldDurabilityTakeCount) {
+        this.shieldDurabilityTakeCount = shieldDurabilityTakeCount;
+    }
+
+    public void setShieldSphereDuration(long shieldSphereDuration) {
+        this.shieldSphereDuration = shieldSphereDuration;
+    }
+
+    public void setShieldSphereRadius(double shieldSphereRadius) {
+        this.shieldSphereRadius = shieldSphereRadius;
+    }
+
+    public void setShieldThrowCooldown(long shieldThrowCooldown) {
+        this.shieldThrowCooldown = shieldThrowCooldown;
+    }
+
+    public void setShieldThrowRange(double shieldThrowRange) {
+        this.shieldThrowRange = shieldThrowRange;
+    }
+
 }

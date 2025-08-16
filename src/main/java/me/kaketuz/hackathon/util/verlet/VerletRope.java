@@ -1,6 +1,7 @@
 package me.kaketuz.hackathon.util.verlet;
 
 import com.projectkorra.projectkorra.GeneralMethods;
+import com.projectkorra.projectkorra.region.RegionProtection;
 import org.bukkit.FluidCollisionMode;
 import org.bukkit.Location;
 import org.bukkit.World;

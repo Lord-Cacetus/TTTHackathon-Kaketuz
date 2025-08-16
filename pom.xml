@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>me.kaketuz</groupId>
-    <artifactId>Hackathon</artifactId>
+    <artifactId>KaketuzHackathon</artifactId>
     <version>1.0.0</version>
     <packaging>jar</packaging>
 
