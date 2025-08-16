@@ -658,6 +658,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
                         currentSkin = getSkinByStandingBiome(originBiome);
                         display.setBlock(currentSkin);
                         display.setPersistent(false);
+                        display.setTeleportDuration(2);
                         displays.add(display);
                     }
                 }
@@ -710,7 +711,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
 
                         BlockDisplay disp = displays.get(i);
                         disp.setTransformationMatrix(mat);
-                        disp.setTeleportDuration(2);
+                        disp.setInterpolationDuration(2);
                         disp.teleport(loc);
                     }
 
