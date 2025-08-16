@@ -77,7 +77,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
     private final Map<String, Pair<Long, Long>> COOLDOWNS = new HashMap<>();
     private final Set<LocalTask> TASKS = ConcurrentHashMap.newKeySet();
     private final Set<TempBlock> ALL_TEMP_BLOCKS = new HashSet<>();
-    private boolean isForming, isFormed;
+    private boolean isForming, isFormed, stopFlag;
     private BossBar durabilityBar;
     private int maxDurability, currentDurability;
     private ItemStack[] OLD_ARMOR;
@@ -394,7 +394,7 @@ public class PlantArmor extends PlantAbility implements AddonAbility, MultiAbili
             bPlayer.addCooldown(this);
             remove();
         }
-
+        if (MovementHandler.isStopped(player) && !stopFlag) {if (currentDurability - 300 <= 0){remove();} else {currentDurability -= 300; stopFlag = true;}} else stopFlag = false;
         try {
             TASKS.forEach(LocalTask::update);
         } catch (Exception e) {
